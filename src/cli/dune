@@ -1,0 +1,28 @@
+(executable
+  (name strings)
+  (libraries
+    utils
+
+    angstrom
+    angstrom-lwt-unix
+    core
+    lwt
+    lwt.unix
+    lwt_ppx
+    ppx_deriving_yojson.runtime
+    ppx_let
+  )
+  (preprocess (pps
+    ppx_let
+    ppx_deriving_yojson
+    ppx_sexp_conv
+    lwt_ppx
+  ))
+  (modes exe)
+  ;(ocamlopt_flags -O3 -unbox-closures)
+)
+
+(env
+  (dev
+    (flags (:standard -warn-error -A)))
+)
