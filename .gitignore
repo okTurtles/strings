@@ -4,3 +4,5 @@ _opam/
 _build/
 **/.merlin
 vue/
+src/flow_parser
+src/prototype

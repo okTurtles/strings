@@ -1,7 +1,7 @@
-open Core
+open Core_kernel
 
 module Exception = struct
-  let rec human = function
+  let human = function
   | Failure msg ->
     msg
 
@@ -9,10 +9,7 @@ module Exception = struct
     "Timed out."
 
   | Unix.Unix_error (c, n, p) ->
-    sprintf "System Error '%s' during '%s(%s)'" (String.uppercase (Unix.Error.message c)) n p
-
-  | Exn.Reraised (msg, ex) ->
-    sprintf "%s\n%s" msg (human ex)
+    sprintf "System Error '%s' during '%s(%s)'" (String.uppercase (Unix.error_message c)) n p
 
   | unknown ->
     Exn.to_string unknown

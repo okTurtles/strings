@@ -107,7 +107,7 @@ let parser =
 
   let at_least_indent indent = string (String.make indent ' ') in
   let text_wrap = string "|" *> maybe (char ' ') *> take_remaining in
-  let comment_start = (string "//-" <|> string "//") *> take_remaining in
+  let comment_start = symbols ["//-"; "//"] *> take_remaining in
   let node = (
     (lift3 triple
         (many1 (choice [class_selector; id_selector; element_selector]))
@@ -150,7 +150,6 @@ let parser =
   in
   let lines : lines t = sep_by1 (many1 end_of_line) line in
 
-
   let pug_begin = (string {s|<template lang="pug">|s} <|> string {s|<template lang='pug'>|s}) <* blank <* (many end_of_line) in
   let pug_end = string {s|</template>|s} in
-  pug_begin *> lines <* mlblank <* pug_end
+  pug_begin *> (lines >>| rollup) <* mlblank <* pug_end

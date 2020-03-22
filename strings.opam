@@ -24,6 +24,10 @@ depends: [
   "lwt_ppx"
   "ppx_deriving"
   "ppx_deriving_yojson"
+  "ppx_gen_rec"
+  "sedlex"
+  "stdlib-shims"
   "utop"
   "yojson"
+  "wtf8"
 ]
