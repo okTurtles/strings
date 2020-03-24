@@ -18,18 +18,28 @@ let () = Lwt.async_exception_hook := (fun ex ->
     |> ignore
   )
 
+let process_file strings filename =
+  let%lwt parsed = Lwt_io.with_file ~mode:Input ~flags:Unix.[O_RDONLY; O_NONBLOCK] filename (Vue.parse filename) in
+  Queue.iter parsed ~f:(fun string ->
+    String.Table.add_multi strings ~key:string ~data:filename
+  );
+  Lwt.return_unit
+
 let main = function
 | _::files ->
-  Lwt_list.iter_s (fun filename ->
-    let%lwt () = Lwt_io.write_line Lwt_io.stdout (sprintf "----------\n%s\n----------" filename) in
-    let flags = Unix.[O_RDONLY; O_NONBLOCK] in
-    let%lwt parsed = Lwt_io.with_file ~mode:Input ~flags filename (fun input_channel ->
-        Vue.parse input_channel
-      )
-    in
-    Array.iter parsed ~f:print_endline;
-    Lwt.return_unit
-  ) files
+  let strings = String.Table.create () in
+  let%lwt () = Lwt_list.iter_p (process_file strings) files in
+  let json = String.Table.fold strings ~init:[] ~f:(fun ~key ~data acc ->
+      let json = `Assoc [
+          "English", `String key;
+          "Files", `List (List.map data ~f:(fun x -> `String x));
+        ]
+      in
+      json::acc
+    )
+  in
+  let%lwt () = Lwt_io.write_line Lwt_io.stdout (Yojson.Basic.pretty_to_string ~std:true (`List json)) in
+  Lwt.return_unit
 | argv ->
   let%lwt () = Lwt_io.write_line Lwt_io.stderr
       (sprintf "Unexpected arguments: %s" (Yojson.Basic.to_string (`List (List.map argv ~f:(fun x -> `String x)))))

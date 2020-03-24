@@ -413,5 +413,4 @@ let strings queue source =
          |> print_endline; *)
       extract queue stmts
     end
-  | exception exn -> print_endline (sprintf "%s ::: %s" source (Exn.to_string exn))
   end

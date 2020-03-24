@@ -1,8 +1,8 @@
 open Core_kernel
 
-type raw = string array [@@deriving sexp, yojson]
+type raw = string [@@deriving sexp, yojson]
 
-let parser =
+let parser () =
   let open Angstrom in
   let open Basic in
 
@@ -15,10 +15,4 @@ let parser =
     )
   in
   js_begin *> (many_till line js_end) *> (return ())
-  >>| (fun () ->
-    let source = Buffer.contents buf in
-    let queue = Queue.create () in
-    Js_ast.strings queue source;
-    Queue.to_array queue
-
-  )
+  >>| (fun () -> Buffer.contents buf)
