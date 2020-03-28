@@ -9,7 +9,7 @@ let () = Lwt.async_exception_hook := (fun ex ->
     |> ignore
   )
 
-let pool = Lwt_pool.create 10 (fun () -> Lwt.return_unit)
+let pool = Lwt_pool.create 6 (fun () -> Lwt.return_unit)
 
 let process_file strings filename =
   Lwt_pool.use pool (fun () ->
@@ -21,16 +21,17 @@ let process_file strings filename =
   )
 
 let rec traverse strings directory =
-  Lwt_stream.iter_p (function
+  let%lwt entries = Lwt_pool.use pool (fun () -> Lwt_unix.files_of_directory directory |> Lwt_stream.to_list) in
+  Lwt_list.iter_p (function
   | filename when String.is_prefix ~prefix:"." filename -> Lwt.return_unit
   | filename ->
     let path = sprintf "%s/%s" directory filename in
-    begin match%lwt Lwt_unix.stat path with
+    begin match%lwt Lwt_unix.lstat path with
     | { st_kind = S_REG; _ } when String.is_suffix ~suffix:".vue" filename -> process_file strings path
     | { st_kind = S_DIR; _ } -> traverse strings path
     | _ -> Lwt.return_unit
     end
-  ) (Lwt_unix.files_of_directory directory)
+  ) entries
 
 let fmt s = Yojson.Basic.to_string (`String s)
 

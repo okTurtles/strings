@@ -25,9 +25,6 @@ let mlws1 = (satisfy is_mlws *> mlws)
 let take_remaining = take_while (Char.(<>) '\x0a')
 let skip_remaining = skip_while (Char.(<>) '\x0a')
 let maybe p = option None (p >>| Option.return)
-let double x y = x, y
-let triple x y z = x, y, z
-let _quad w x y z = w, x, y, z
 
 let escapable_string_parser ~escape ~separator =
   let is_separator = Char.(=) separator in
@@ -35,33 +32,29 @@ let escapable_string_parser ~escape ~separator =
   let buf = Buffer.create 50 in
   char separator *> (
     let rec loop escaping =
-      any_char >>= begin function
-      | c when (not escaping) && is_escape c ->
-        loop true
+      any_char >>= (fun x -> begin match x, escaping with
+        | c, false when is_escape c ->
+          loop true
 
-      | c when is_separator c ->
-        begin match escaping with
-        | true ->
+        | c, true when is_separator c ->
           Buffer.add_char buf c;
           loop false
-        | false ->
+
+        | c, false when is_separator c ->
           let result = Buffer.contents buf in
           Buffer.clear buf;
           return result
+
+        | c, true ->
+          Buffer.add_char buf escape;
+          Buffer.add_char buf c;
+          loop false
+
+        | c, false ->
+          Buffer.add_char buf c;
+          loop escaping
         end
-
-      | c when escaping ->
-        Buffer.add_char buf escape;
-        Buffer.add_char buf c;
-        loop false
-
-      | c when not escaping ->
-        Buffer.add_char buf c;
-        loop escaping
-
-      | c -> Buffer.clear buf; failwithf "Impossible case: %c, %b. Please report this bug" c escaping ()
-      end
+      )
     in
     loop false
-  )
-  <?> "Escapable string"
+  ) <?> "Escapable string"

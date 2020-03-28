@@ -20,7 +20,7 @@ let rec loop_pug queue Pug.{ parts; arguments; text; children } =
       try Js_ast.strings queue source
       with _exn -> ()
     ));
-  List.iter children ~f:(loop_pug queue)
+  Array.iter children ~f:(loop_pug queue)
 
 let parse filename ic =
   let open Angstrom in
@@ -32,14 +32,14 @@ let parse filename ic =
       Css.parser >>| (fun () -> Css);
     ]
   in
-  let parser = lift2 double (sep_by mlws1 languages) (mlws *> take_while (fun _ -> true)) in
+  let parser = lift2 (fun x y -> x, y) (sep_by mlws1 languages) (mlws *> take_while (fun _ -> true)) in
 
   let%lwt _unconsumed, result = Angstrom_lwt_unix.parse parser ic in
   begin match result with
   | Ok (parsed, "") ->
     let strings = Queue.create () in
     List.iter parsed ~f:(function
-    | Pug nodes -> List.iter nodes ~f:(loop_pug strings)
+    | Pug nodes -> Array.iter nodes ~f:(loop_pug strings)
     | Js source ->
       begin try Js_ast.strings strings source
       with _exn -> failwithf "JS Syntax Error in %s" filename () end

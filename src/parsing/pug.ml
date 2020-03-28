@@ -20,7 +20,7 @@ type node = {
   parts: selector_part list;
   arguments: argument list;
   text: string option;
-  children: node list;
+  children: node array;
 } [@@deriving yojson, sexp]
 
 type line =
@@ -30,7 +30,7 @@ type line =
 [@@deriving yojson, sexp]
 
 type lines = (int * line) list [@@deriving yojson, sexp]
-type nodes = node list [@@deriving yojson, sexp]
+type nodes = node array [@@deriving yojson, sexp]
 
 let rollup (lines : lines) =
   let rec loop lvl acc_nodes acc_text = function
@@ -43,7 +43,7 @@ let rollup (lines : lines) =
     let nodes, text, rest = loop Int.(lvl + 2) [] None tail in
     let wrap = Option.map ~f:(String.concat ~sep:" ") text in
     let new_node = { node with
-      children = List.rev nodes;
+      children = Array.of_list_rev nodes;
       text = (Option.first_some wrap (Option.filter ~f:(fun x -> String.is_empty x |> not) node.text));
     }
     in
@@ -71,7 +71,7 @@ let rollup (lines : lines) =
     acc_nodes, acc_text, whole
   in
   let lvl = List.hd lines |> Option.value_map ~default:0 ~f:fst in
-  loop lvl [] None lines |> fst3 |> List.rev
+  loop lvl [] None lines |> fst3 |> Array.of_list_rev
 
 let parser =
   let open Angstrom in
@@ -87,40 +87,38 @@ let parser =
 
   let word = take_while1 alphanum in
   let identifier =
-    lift2 double word
+    lift2 (fun s ll -> { name = String.concat (s::ll) })
+      word
       (many (lift2 (sprintf "%s%s")
             (symbols ["."; "-"; ":"; "#"])
             ((take_while1 alphanum) <|> (lift3 (sprintf "%c%s%c") (char '[') (take_while1 alphanum) (char ']')))
           ))
-    >>| (fun (s, ll) -> { name = String.concat (s::ll) })
   in
   let element_selector = identifier >>| (fun s -> Element s) in
   let class_selector = char '.' *> identifier >>| (fun x -> Class x) in
   let id_selector = char '#' *> identifier >>| (fun x -> Id x) in
-  let argument = (lift3 triple
+  let argument = (lift3 (fun prefix identifier contents -> { prefix; identifier; contents })
       (maybe (symbols [":$"; ":"; "@"; "#"]))
       (identifier)
       (maybe (char '=' *> blank *> single_quoted_string))
   )
-    >>| (fun (prefix, identifier, contents) -> { prefix; identifier; contents })
   in
 
   let at_least_indent indent = string (String.make indent ' ') in
   let text_wrap = string "|" *> maybe (char ' ') *> take_remaining in
   let comment_start = symbols ["//-"; "//"] *> take_remaining in
   let node = (
-    (lift3 triple
-        (many1 (choice [class_selector; id_selector; element_selector]))
-        (maybe (char '(' *> mlblank *> (sep_by mlblank1 argument) <* mlblank <* char ')') >>| (Option.value ~default:[]))
-        (maybe (blank *> take_remaining)
-          >>| function
-          | None | Some "" -> None
-          | Some x when String.is_prefix ~prefix:"//" x -> None
-          | (Some _ as x) -> x
-        )
+    (lift3 (fun parts arguments text -> { parts; arguments; text; children = [||] })
+          (many1 (choice [class_selector; id_selector; element_selector]))
+          (maybe (char '(' *> mlblank *> (sep_by mlblank1 argument) <* mlblank <* char ')') >>| (Option.value ~default:[]))
+          (maybe (blank *> take_remaining)
+            >>| function
+            | None | Some "" -> None
+            | Some x when String.is_prefix ~prefix:"//" x -> None
+            | (Some _ as x) -> x
+          )
     )
   )
-    >>| (fun (parts, arguments, text) -> { parts; arguments; text; children = [] })
   in
   let line = (take_while is_ws >>| String.length) >>= (fun lvl ->
       choice [

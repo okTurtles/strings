@@ -9,10 +9,9 @@ let parse ic =
   let open Basic in
   let double_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'"' in
 
-  let line = lift2 double
+  let line = lift2 (fun x y -> Translation (x, y))
       (mlws *> double_quoted_string <* mlws <* char '=')
       (mlws *> double_quoted_string <* mlws <* char ';' <* mlws)
-    >>| (fun pair -> Translation pair)
   in
 
   let comment = mlws *> string "/*" *> (
