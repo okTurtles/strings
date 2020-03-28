@@ -7,7 +7,7 @@ type line =
 let parse ic =
   let open Angstrom in
   let open Basic in
-  let double_quoted_string = char '"' *> (escapable_string_parser ~escape:'\\' ~separator:'"') <* char '"' in
+  let double_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'"' in
 
   let line = lift2 double
       (mlws *> double_quoted_string <* mlws <* char '=')
@@ -16,17 +16,14 @@ let parse ic =
   in
 
   let comment = mlws *> string "/*" *> (
-      let rec loop () =
+      let rec loop n =
         any_char >>= begin function
-        | '*' ->
-          any_char >>= begin function
-          | '/' -> return Comment
-          | _ -> loop ()
-          end
-        | _ -> loop ()
+        | '*' when Int.(n = 0) -> loop 1
+        | '/' when Int.(n = 1) -> return Comment
+        | _ -> loop 0
         end
       in
-      loop ()
+      loop 0
     ) <* mlws
   in
 

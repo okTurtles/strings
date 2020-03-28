@@ -82,7 +82,7 @@ let parser =
   let _blank1 = (sep_by1 comments ws1) in
   let mlblank = (sep_by comments mlws) in
   let mlblank1 = (sep_by1 comments mlws1) in
-  let single_quoted_string = char '\'' *> (escapable_string_parser ~escape:'\\' ~separator:'\'') <* char '\'' in
+  let single_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'\'' in
   let symbols ll = ll |> List.map ~f:string |> choice in
 
   let word = take_while1 alphanum in

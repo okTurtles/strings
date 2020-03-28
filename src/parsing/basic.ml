@@ -32,35 +32,36 @@ let _quad w x y z = w, x, y, z
 let escapable_string_parser ~escape ~separator =
   let is_separator = Char.(=) separator in
   let is_escape = Char.(=) escape in
-  let escaping = ref false in
-  let buffer = Buffer.create 50 in
-  skip_while (fun c ->
-    begin match c, !escaping with
-    | c, false when is_escape c ->
-      escaping := true;
-      true
+  let buf = Buffer.create 50 in
+  char separator *> (
+    let rec loop escaping =
+      any_char >>= begin function
+      | c when (not escaping) && is_escape c ->
+        loop true
 
-    | c, false when is_separator c ->
-      false
+      | c when is_separator c ->
+        begin match escaping with
+        | true ->
+          Buffer.add_char buf c;
+          loop false
+        | false ->
+          let result = Buffer.contents buf in
+          Buffer.clear buf;
+          return result
+        end
 
-    | c, true when is_separator c ->
-      escaping := false;
-      Buffer.add_char buffer c;
-      true
+      | c when escaping ->
+        Buffer.add_char buf escape;
+        Buffer.add_char buf c;
+        loop false
 
-    | c, true ->
-      escaping := false;
-      Buffer.add_char buffer escape;
-      Buffer.add_char buffer c;
-      true
+      | c when not escaping ->
+        Buffer.add_char buf c;
+        loop escaping
 
-    | c, false ->
-      Buffer.add_char buffer c;
-      true
-    end
+      | c -> Buffer.clear buf; failwithf "Impossible case: %c, %b. Please report this bug" c escaping ()
+      end
+    in
+    loop false
   )
-  >>= fun () ->
-  let result = Buffer.contents buffer in
-  Buffer.clear buffer;
-  return result
   <?> "Escapable string"
