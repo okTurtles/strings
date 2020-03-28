@@ -2,11 +2,11 @@ open Core_kernel
 
 let () = Lwt_engine.set ~transfer:true ~destroy:true (
     try
-      (* Linux *)
-      new Lwt_engine.libev ~backend:Lwt_engine.Ev_backend.epoll ()
-    with _ ->
       (* MacOS *)
       new Lwt_engine.libev ~backend:Lwt_engine.Ev_backend.kqueue ()
+    with _ ->
+      (* Linux *)
+      new Lwt_engine.libev ~backend:Lwt_engine.Ev_backend.epoll ()
   )
 
 let () = Lwt.async_exception_hook := (fun ex ->
@@ -18,33 +18,49 @@ let () = Lwt.async_exception_hook := (fun ex ->
     |> ignore
   )
 
-let process_file strings filename =
-  let%lwt parsed = Lwt_io.with_file ~mode:Input ~flags:Unix.[O_RDONLY; O_NONBLOCK] filename (Vue.parse filename) in
-  Queue.iter parsed ~f:(fun string ->
-    String.Table.add_multi strings ~key:string ~data:filename
-  );
-  Lwt.return_unit
+let pool = Lwt_pool.create 10 (fun () -> Lwt.return_unit)
 
-let main = function
-| _::files ->
+let process_file strings filename =
+  Lwt_pool.use pool (fun () ->
+    let%lwt parsed = Lwt_io.with_file ~mode:Input ~flags:Unix.[O_RDONLY; O_NONBLOCK] filename (Vue.parse filename) in
+    Queue.iter parsed ~f:(fun string ->
+      String.Table.add_multi strings ~key:string ~data:filename
+    );
+    Lwt.return_unit
+  )
+
+let rec traverse strings directory =
+  Lwt_stream.iter_p (function
+  | filename when String.is_prefix ~prefix:"." filename -> Lwt.return_unit
+  | filename ->
+    let path = sprintf "%s/%s" directory filename in
+    begin match%lwt Lwt_unix.stat path with
+    | { st_kind = S_REG; _ } when String.is_suffix ~suffix:".vue" filename -> process_file strings path
+    | { st_kind = S_DIR; _ } -> traverse strings path
+    | _ -> Lwt.return_unit
+    end
+  ) (Lwt_unix.files_of_directory directory)
+
+let main args =
+  let%lwt directory = begin match args with
+  | _::x::[] -> Lwt.return x
+  | _::[] -> Lwt.return "."
+  | argv ->
+    let%lwt () = Lwt_io.write_line Lwt_io.stderr
+        (sprintf "Unexpected arguments: %s" (Yojson.Basic.to_string (`List (List.map argv ~f:(fun x -> `String x)))))
+    in
+    exit 1
+  end
+  in
   let strings = String.Table.create () in
-  let%lwt () = Lwt_list.iter_p (process_file strings) files in
-  let json = String.Table.fold strings ~init:[] ~f:(fun ~key ~data acc ->
-      let json = `Assoc [
-          "English", `String key;
-          "Files", `List (List.map data ~f:(fun x -> `String x));
-        ]
-      in
-      json::acc
+  let%lwt () = traverse strings (String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory) in
+  let promises = String.Table.fold strings ~init:[] ~f:(fun ~key ~data acc ->
+      let formatted = Yojson.Basic.to_string (`String key) in
+      let output = sprintf "/* %s */\n%s = %s;\n\n" (String.concat ~sep:", " data) formatted formatted in
+      (Lwt_io.write Lwt_io.stdout output)::acc
     )
   in
-  let%lwt () = Lwt_io.write_line Lwt_io.stdout (Yojson.Basic.pretty_to_string ~std:true (`List json)) in
-  Lwt.return_unit
-| argv ->
-  let%lwt () = Lwt_io.write_line Lwt_io.stderr
-      (sprintf "Unexpected arguments: %s" (Yojson.Basic.to_string (`List (List.map argv ~f:(fun x -> `String x)))))
-  in
-  exit 1
+  Lwt.join promises
 
 let () =
   Lwt_main.run (
