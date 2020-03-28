@@ -1,14 +1,5 @@
 open Core_kernel
 
-let () = Lwt_engine.set ~transfer:true ~destroy:true (
-    try
-      (* MacOS *)
-      new Lwt_engine.libev ~backend:Lwt_engine.Ev_backend.kqueue ()
-    with _ ->
-      (* Linux *)
-      new Lwt_engine.libev ~backend:Lwt_engine.Ev_backend.epoll ()
-  )
-
 let () = Lwt.async_exception_hook := (fun ex ->
     let open Lwt in
     let p1 = Lwt_io.write_line Lwt_io.stderr (sprintf "💀 PLEASE REPORT THIS BUG. UNCAUGHT EXCEPTION: %s" (Utils.Exception.human ex)) in
@@ -41,26 +32,68 @@ let rec traverse strings directory =
     end
   ) (Lwt_unix.files_of_directory directory)
 
-let main args =
-  let%lwt directory = begin match args with
-  | _::x::[] -> Lwt.return x
-  | _::[] -> Lwt.return "."
-  | argv ->
-    let%lwt () = Lwt_io.write_line Lwt_io.stderr
-        (sprintf "Unexpected arguments: %s" (Yojson.Basic.to_string (`List (List.map argv ~f:(fun x -> `String x)))))
-    in
-    exit 1
-  end
-  in
-  let strings = String.Table.create () in
-  let%lwt () = traverse strings (String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory) in
-  let promises = String.Table.fold strings ~init:[] ~f:(fun ~key ~data acc ->
-      let formatted = Yojson.Basic.to_string (`String key) in
-      let output = sprintf "/* %s */\n%s = %s;\n\n" (String.concat ~sep:", " data) formatted formatted in
-      (Lwt_io.write Lwt_io.stdout output)::acc
+let fmt s = Yojson.Basic.to_string (`String s)
+
+let write_english ~filename english =
+  let log_p = Lwt_io.write_line Lwt_io.stdout (sprintf "Generating: %s" filename) in
+  let file_p = Lwt_io.with_file ~flags:Unix.[O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT] ~mode:Output filename (fun oc ->
+      String.Table.fold english ~init:Lwt.return_unit ~f:(fun ~key ~data acc ->
+        let formatted = fmt key in
+        let output = sprintf "/* %s */\n%s = %s;\n\n" (String.concat ~sep:", " data) formatted formatted in
+        let%lwt () = acc in
+        Lwt_io.write oc output
+      )
     )
   in
-  Lwt.join promises
+  Lwt.join [log_p; file_p]
+
+let write_other ~filename english other =
+  let log_p = Lwt_io.write_line Lwt_io.stdout (sprintf "Generating: %s" filename) in
+  let file_p = Lwt_io.with_file ~flags:Unix.[O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT] ~mode:Output filename (fun oc ->
+      String.Table.fold english ~init:Lwt.return_unit ~f:(fun ~key ~data:_ acc ->
+        let output = begin match String.Table.find other key with
+        | None ->
+          let formatted = fmt key in
+          sprintf "/* MISSING TRANSLATION */\n%s = %s;\n\n" formatted formatted
+        | Some translated -> sprintf "%s = %s;\n\n" (fmt key) (fmt translated)
+        end
+        in
+        let%lwt () = acc in
+        Lwt_io.write oc output
+      )
+    )
+  in
+  Lwt.join [log_p; file_p]
+
+let main args =
+  let%lwt directories = begin match args with
+  | _::[] -> let%lwt () = Lwt_io.write_line Lwt_io.stderr "At least one argument is required" in exit 1
+  | _::x -> Lwt.return x
+  | _ -> let%lwt () = Lwt_io.write_line Lwt_io.stderr "Expected Unix calling convention" in exit 1
+  end
+  in
+  let english = String.Table.create () in
+  let%lwt () = Lwt_list.iter_p (fun directory ->
+      traverse english (String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory)
+    ) directories
+  in
+  let%lwt () = write_english ~filename:"english.strings" english in
+
+  let%lwt () = Lwt_stream.iter_s (fun filename ->
+      begin match String.chop_suffix ~suffix:".translation" filename with
+      | Some basename ->
+        begin match%lwt Lwt_unix.stat filename with
+        | { st_kind = S_REG; _ } ->
+          let%lwt other = Lwt_io.with_file ~mode:Input ~flags:Unix.[O_RDONLY; O_NONBLOCK] filename Parsing.Strings.parse in
+          write_other ~filename:(sprintf "%s.strings" basename) english other
+        | _ -> Lwt.return_unit
+        end
+      | None -> Lwt.return_unit
+      end
+    ) (Lwt_unix.files_of_directory ".")
+  in
+
+  Lwt.return_unit
 
 let () =
   Lwt_main.run (

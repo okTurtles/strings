@@ -18,7 +18,6 @@ depends: [
 
   "angstrom"
   "angstrom-lwt-unix"
-  "conf-libev"
   "core"
   "lwt"
   "lwt_ppx"

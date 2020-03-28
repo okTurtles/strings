@@ -22,7 +22,7 @@ let rec loop_pug queue Pug.{ parts; arguments; text; children } =
     ));
   List.iter children ~f:(loop_pug queue)
 
-let parse filename input_channel =
+let parse filename ic =
   let open Angstrom in
   let open Basic in
 
@@ -34,7 +34,7 @@ let parse filename input_channel =
   in
   let parser = lift2 double (sep_by mlws1 languages) (mlws *> take_while (fun _ -> true)) in
 
-  let%lwt _unconsumed, result = Angstrom_lwt_unix.parse parser input_channel in
+  let%lwt _unconsumed, result = Angstrom_lwt_unix.parse parser ic in
   begin match result with
   | Ok (parsed, "") ->
     let strings = Queue.create () in

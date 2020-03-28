@@ -6,3 +6,5 @@ _build/
 vue/
 src/flow_parser
 src/prototype
+*.strings
+*.translation
