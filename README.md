@@ -8,6 +8,7 @@ You can contribute by directly making changes to the `.strings` file for the lan
 Feel free to make edits directly on Github!
 
 Example (`french.strings`):
+
 **before**
 ```
 /* MISSING TRANSLATION - frontend/views/pages/Home.vue */
@@ -16,6 +17,7 @@ Example (`french.strings`):
 /* MISSING TRANSLATION - frontend/views/containers/contributions/ContributionsWidget.vue */
 "You and {count} other members are contributing." = "You and {count} other members are contributing.";
 ```
+
 **after**
 ```
 /* frontend/views/pages/Home.vue */
