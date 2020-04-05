@@ -10,11 +10,14 @@ let () = Lwt.async_exception_hook := (fun ex ->
   )
 
 let pool = Lwt_pool.create 6 (fun () -> Lwt.return_unit)
+let (<&>) = Lwt.(<&>)
+let read_flags = Unix.[O_RDONLY; O_NONBLOCK]
+let write_flags = Unix.[O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT]
 
 let process_file ~root (strings, count) filename =
   Lwt_pool.use pool (fun () ->
     incr count;
-    let%lwt parsed = Lwt_io.with_file ~mode:Input ~flags:Unix.[O_RDONLY; O_NONBLOCK] filename (Vue.parse filename) in
+    let%lwt parsed = Lwt_io.with_file ~mode:Input ~flags:read_flags filename (Vue.parse filename) in
     Queue.iter parsed ~f:(fun string ->
       let data = String.chop_prefix filename ~prefix:root |> Option.value ~default:filename in
       String.Table.add_multi strings ~key:string ~data
@@ -36,56 +39,82 @@ let rec traverse ~root strings directory =
   ) entries
 
 let fmt s = Yojson.Basic.to_string (`String s)
+let json_pair left right first =
+  sprintf "%s\n  %s: %s" (if !first then begin first := false; "" end else ",") left right
 
 let write_english english count =
-  (* Write .strings *)
-  let strings_path = "strings/english.strings" in
-  let flags = Unix.[O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT] in
-  let%lwt () = Lwt_io.with_file ~flags ~mode:Output strings_path (fun oc ->
-      String.Table.fold english ~init:Lwt.return_unit ~f:(fun ~key ~data acc ->
-        let formatted = fmt key in
-        let output = sprintf "/* %s */\n%s = %s;\n\n" (String.concat ~sep:", " data) formatted formatted in
-        let%lwt () = acc in
-        Lwt_io.write oc output
+  let path_strings = "strings/english.strings" in
+  let path_json = "strings/english.json" in
+  let first = ref true in
+  let%lwt () =
+    Lwt_io.with_file ~flags:write_flags ~mode:Output path_strings (fun oc_strings ->
+      Lwt_io.with_file ~flags:write_flags ~mode:Output path_json (fun oc_json ->
+        let%lwt () = Lwt_io.write_char oc_json '{' in
+        let%lwt () = String.Table.fold english ~init:Lwt.return_unit ~f:(fun ~key ~data acc ->
+            let fmt_key = fmt key in
+            let output_strings = sprintf "/* %s */\n%s = %s;\n\n" (String.concat ~sep:", " data) fmt_key fmt_key in
+            let output_json = json_pair fmt_key fmt_key first in
+            let%lwt () = acc in
+            (Lwt_io.write oc_strings output_strings) <&> (Lwt_io.write oc_json output_json)
+          )
+        in
+        Lwt_io.write oc_json "\n}\n"
       )
     )
   in
-  sprintf "Processed %d .vue files\n...\nGenerated '%s' with:\n- %d unique strings\n..."
-    count strings_path (String.Table.length english)
+  sprintf "✅ Processed %d .vue files\n\n✅ Generated '%s' and '%s' with:\n- %d unique strings\n"
+    count path_strings path_json (String.Table.length english)
   |> Lwt_io.write_line Lwt_io.stdout
 
-let write_other ~filename english other =
-  Lwt_io.with_file ~flags:Unix.[O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT] ~mode:Output filename (fun oc ->
-    let missing_translation key x =
-      let formatted = fmt key in
-      let line = sprintf "/* MISSING TRANSLATION - %s */\n%s = %s;\n\n" (String.concat ~sep:", " x) formatted formatted in
-      Some (`Left, Lwt_io.write oc line)
-    in
-    let table = String.Table.merge english other ~f:(fun ~key -> function
-      | `Left x -> missing_translation key x
-      | `Both (x, y) when String.(key = y) -> missing_translation key x
-      | `Both (x, y) ->
-        let line = sprintf "/* %s */\n%s = %s;\n\n" (String.concat x) (fmt key) (fmt y) in
-        Some (`Both, Lwt_io.write oc line)
-      | `Right y when String.(key = y) -> None
-      | `Right y ->
-        let line = sprintf "/* Not currently used */\n%s = %s;\n\n" (fmt key) (fmt y) in
-        Some (`Right, Lwt_io.write oc line)
+let write_other ~language english other =
+  let path_strings = sprintf "strings/%s.strings" language in
+  let path_json = sprintf "strings/%s.json" language in
+  let first = ref true in
+  let%lwt n_left, n_right, n_both =
+    Lwt_io.with_file ~flags:write_flags ~mode:Output path_strings (fun oc_strings ->
+      Lwt_io.with_file ~flags:write_flags ~mode:Output path_json (fun oc_json ->
+        let%lwt () = Lwt_io.write_char oc_json '{' in
+        let missing_translation key x =
+          let fmt_key = fmt key in
+          let line_strings = sprintf "/* MISSING TRANSLATION - %s */\n%s = %s;\n\n" (String.concat ~sep:", " x) fmt_key fmt_key in
+          let line_json = json_pair fmt_key fmt_key first in
+          Some (`Left, Lwt_io.write oc_strings line_strings <&> Lwt_io.write oc_json line_json)
+        in
+        let table = String.Table.merge english other ~f:(fun ~key -> function
+          | `Left x -> missing_translation key x
+          | `Both (x, y) when String.(key = y) -> missing_translation key x
+          | `Both (x, y) ->
+            let fmt_key = fmt key in
+            let fmt_y = fmt y in
+            let line_strings = sprintf "/* %s */\n%s = %s;\n\n" (String.concat x) fmt_key fmt_y in
+            let line_json = json_pair fmt_key fmt_y first in
+            Some (`Both, Lwt_io.write oc_strings line_strings <&> Lwt_io.write oc_json line_json)
+          | `Right y when String.(key = y) -> None
+          | `Right y ->
+            let fmt_key = fmt key in
+            let fmt_y = fmt y in
+            let line_strings = sprintf "/* Not currently used */\n%s = %s;\n\n" fmt_key fmt_y in
+            let line_json = json_pair fmt_key fmt_y first in
+            Some (`Right, Lwt_io.write oc_strings line_strings <&> Lwt_io.write oc_json line_json)
+          )
+        in
+        let%lwt stats = String.Table.fold table ~init:(Lwt.return (0, 0, 0)) ~f:(fun ~key:_ ~data:(w, p) acc ->
+            let%lwt () = p in
+            let%lwt x, y, z = acc in
+            w |> function
+            | `Left -> Lwt.return ((succ x), y, z)
+            | `Right -> Lwt.return (x, (succ y), z)
+            | `Both -> Lwt.return (x, y, (succ z))
+          )
+        in
+        let%lwt () = Lwt_io.write oc_json "\n}\n" in
+        Lwt.return stats
       )
-    in
-    let%lwt n_left, n_right, n_both = String.Table.fold table ~init:(Lwt.return (0, 0, 0)) ~f:(fun ~key:_ ~data:(w, p) acc ->
-        let%lwt () = p in
-        let%lwt x, y, z = acc in
-        w |> function
-        | `Left -> Lwt.return ((succ x), y, z)
-        | `Right -> Lwt.return (x, (succ y), z)
-        | `Both -> Lwt.return (x, y, (succ z))
-      )
-    in
-    sprintf "Generated '%s' with:\n- %d new strings\n- %d existing strings\n- %d unused strings\n..."
-      filename n_left n_both n_right
-    |> Lwt_io.write_line Lwt_io.stdout
-  )
+    )
+  in
+  sprintf "✅ Generated '%s' and '%s' with:\n- %d new strings\n- %d existing strings\n- %d unused strings\n"
+    path_strings path_json n_left n_both n_right
+  |> Lwt_io.write_line Lwt_io.stdout
 
 let directory_exists path =
   begin match%lwt Lwt_unix.stat path with
@@ -133,12 +162,12 @@ let main args =
   let%lwt () = Lwt_list.iter_p (fun filename ->
       begin match String.chop_suffix ~suffix:".strings" filename with
       | Some "english" -> Lwt.return_unit
-      | Some _ ->
+      | Some language ->
         let path = sprintf "strings/%s" filename in
         begin match%lwt Lwt_unix.stat path with
         | { st_kind = S_REG; _ } ->
-          let%lwt other = Lwt_io.with_file ~mode:Input ~flags:Unix.[O_RDONLY; O_NONBLOCK] path Parsing.Strings.parse in
-          write_other ~filename:path english other
+          let%lwt other = Lwt_io.with_file ~mode:Input ~flags:read_flags path Parsing.Strings.parse in
+          write_other ~language english other
         | _ -> Lwt.return_unit
         end
       | None -> Lwt.return_unit
