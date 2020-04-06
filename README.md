@@ -27,7 +27,8 @@ Example (`french.strings`):
 "You and {count} other members are contributing." = "Vous, ainsi que {count} autres membres, contribuez.";
 ```
 Notes:
-- The original English text is on left and should not be changed.
+- The original English text is on the left and must not be changed.
+- Removing `MISSING TRANSLATION` is not necessary.
 - Text is enclosed within double quotes.
 - Do not modify text enclosed within `{` and `}`, but you can move it.
 - To represent the double quote character itself (`"`), use `\"`.

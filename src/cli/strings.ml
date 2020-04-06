@@ -123,7 +123,6 @@ let directory_exists path =
   | exception _ -> Lwt.return_false
   end
 
-
 let main args =
   let t0 = Time_now.nanoseconds_since_unix_epoch () in
   let%lwt directories = begin match args with
