@@ -91,11 +91,9 @@ let write_other ~language english other =
             Some (`Both, Lwt_io.write oc_strings line_strings <&> Lwt_io.write oc_json line_json)
           | `Right y when String.(key = y) -> None
           | `Right y ->
-            let fmt_key = fmt key in
-            let fmt_y = fmt y in
-            let line_strings = sprintf "/* Not currently used */\n%s = %s;\n\n" fmt_key fmt_y in
-            let line_json = json_pair fmt_key fmt_y first in
-            Some (`Right, Lwt_io.write oc_strings line_strings <&> Lwt_io.write oc_json line_json)
+            (* No need to write "deprecated translations" to JSON *)
+            let line_strings = sprintf "/* Not currently used */\n%s = %s;\n\n" (fmt key) (fmt y) in
+            Some (`Right, Lwt_io.write oc_strings line_strings)
           )
         in
         let%lwt stats = String.Table.fold table ~init:(Lwt.return (0, 0, 0)) ~f:(fun ~key:_ ~data:(w, p) acc ->
