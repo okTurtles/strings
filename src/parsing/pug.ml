@@ -1,10 +1,10 @@
 open Core_kernel
 
 type identifier = {
-  name: string;
+  parts: string list;
 } [@@deriving yojson, sexp]
 
-type selector_part =
+type selector =
 | Element of identifier
 | Class of identifier
 | Id of identifier
@@ -17,7 +17,7 @@ type argument = {
 } [@@deriving yojson, sexp]
 
 type node = {
-  parts: selector_part list;
+  selector: selector;
   arguments: argument list;
   text: string option;
   children: node array;
@@ -87,7 +87,7 @@ let parser =
 
   let word = take_while1 alphanum in
   let identifier =
-    lift2 (fun s ll -> { name = String.concat (s::ll) })
+    lift2 (fun s ll -> { parts = s::ll })
       word
       (many (lift2 (sprintf "%s%s")
             (symbols ["."; "-"; ":"; "#"])
@@ -108,8 +108,8 @@ let parser =
   let text_wrap = string "|" *> maybe (char ' ') *> take_remaining in
   let comment_start = symbols ["//-"; "//"] *> take_remaining in
   let node = (
-    (lift3 (fun parts arguments text -> { parts; arguments; text; children = [||] })
-          (many1 (choice [class_selector; id_selector; element_selector]))
+    (lift3 (fun selector arguments text -> { selector; arguments; text; children = [||] })
+          (choice [class_selector; id_selector; element_selector])
           (maybe (char '(' *> mlblank *> (sep_by mlblank1 argument) <* mlblank <* char ')') >>| (Option.value ~default:[]))
           (maybe (blank *> take_remaining)
             >>| function

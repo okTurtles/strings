@@ -20,7 +20,7 @@ let write_flags = Unix.[O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT]
 let process_file ~root (strings, count) filename =
   Lwt_pool.use pool (fun () ->
     incr count;
-    let%lwt parsed = Lwt_io.with_file ~mode:Input ~flags:read_flags filename (Vue.parse filename) in
+    let%lwt parsed = Lwt_io.with_file ~mode:Input ~flags:read_flags filename (Vue.parse ~filename ~f:Vue.extract_strings) in
     Queue.iter parsed ~f:(fun string ->
       let data = String.chop_prefix filename ~prefix:root |> Option.value ~default:filename in
       String.Table.update strings string ~f:(function
@@ -137,63 +137,68 @@ let directory_exists path =
 
 let main args =
   let t0 = Time_now.nanoseconds_since_unix_epoch () in
-  let%lwt directories = begin match args with
+  begin match args with
   | _::"-v"::[] | _::"--version"::[] ->
     let%lwt () = Lwt_io.write_line Lwt_io.stdout (sprintf "Version %s" version) in
     exit 0
+  | _::"debug"::"pug"::filename::[] ->
+    let%lwt () = Lwt_io.printlf "Debugging %s" filename in
+    Lwt_io.with_file ~flags:read_flags ~mode:Input filename (fun ic ->
+      Vue.parse ~filename ic ~f:Vue.debug_pug
+    )
   | _::[] -> failwith "At least one argument is required"
-  | _::x -> Lwt.return x
+  | _::directories ->
+    (* Check current directory *)
+    let%lwt strings_dir_files =
+      let git_dir_p = directory_exists ".git" in
+      let strings_dir_p = directory_exists "strings" in
+      let%lwt git_dir = git_dir_p in
+      let%lwt strings_dir = strings_dir_p in
+      if not (git_dir || strings_dir) then failwith "This program must be run from the root of your project";
+      begin match strings_dir with
+      | true -> Lwt_unix.files_of_directory "strings" |> Lwt_stream.to_list
+      | false ->
+        let%lwt () = Lwt_unix.mkdir "strings" 0o751 in
+        Lwt.return_nil
+      end
+    in
+    (* English *)
+    let%lwt english =
+      let english_list = String.Table.create () in
+      let count = ref 0 in
+      let%lwt () = Lwt_list.iter_p (fun directory ->
+          let root = (String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory) in
+          traverse ~root:(sprintf "%s/" root) (english_list, count) root
+        ) directories
+      in
+      let english = String.Table.map english_list ~f:(fun set ->
+          String.Set.to_array set |> String.concat_array ~sep:", "
+        )
+      in
+      let%lwt () = write_english english !count in
+      Lwt.return english
+    in
+    (* Other languages *)
+    let%lwt () = Lwt_list.iter_p (fun filename ->
+        begin match String.chop_suffix ~suffix:".strings" filename with
+        | Some "english" -> Lwt.return_unit
+        | Some language ->
+          let path = sprintf "strings/%s" filename in
+          begin match%lwt Lwt_unix.stat path with
+          | { st_kind = S_REG; _ } ->
+            let%lwt other = Lwt_io.with_file ~mode:Input ~flags:read_flags path Parsing.Strings.parse in
+            write_other ~language english other
+          | _ -> Lwt.return_unit
+          end
+        | None -> Lwt.return_unit
+        end
+      ) strings_dir_files
+    in
+    let t1 = Time_now.nanoseconds_since_unix_epoch () in
+    Lwt_io.write_line Lwt_io.stdout (sprintf "Completed. (%sms)" Int63.(to_string ((t1 - t0) / (of_int 1_000_000))))
+
   | _ -> failwith "Expected Unix calling convention"
   end
-  in
-  (* Check current directory *)
-  let%lwt strings_dir_files =
-    let git_dir_p = directory_exists ".git" in
-    let strings_dir_p = directory_exists "strings" in
-    let%lwt git_dir = git_dir_p in
-    let%lwt strings_dir = strings_dir_p in
-    if not (git_dir || strings_dir) then failwith "This program must be run from the root of your project";
-    begin match strings_dir with
-    | true -> Lwt_unix.files_of_directory "strings" |> Lwt_stream.to_list
-    | false ->
-      let%lwt () = Lwt_unix.mkdir "strings" 0o751 in
-      Lwt.return_nil
-    end
-  in
-  (* English *)
-  let%lwt english =
-    let english_list = String.Table.create () in
-    let count = ref 0 in
-    let%lwt () = Lwt_list.iter_p (fun directory ->
-        let root = (String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory) in
-        traverse ~root:(sprintf "%s/" root) (english_list, count) root
-      ) directories
-    in
-    let english = String.Table.map english_list ~f:(fun set ->
-        String.Set.to_array set |> String.concat_array ~sep:", "
-      )
-    in
-    let%lwt () = write_english english !count in
-    Lwt.return english
-  in
-  (* Other languages *)
-  let%lwt () = Lwt_list.iter_p (fun filename ->
-      begin match String.chop_suffix ~suffix:".strings" filename with
-      | Some "english" -> Lwt.return_unit
-      | Some language ->
-        let path = sprintf "strings/%s" filename in
-        begin match%lwt Lwt_unix.stat path with
-        | { st_kind = S_REG; _ } ->
-          let%lwt other = Lwt_io.with_file ~mode:Input ~flags:read_flags path Parsing.Strings.parse in
-          write_other ~language english other
-        | _ -> Lwt.return_unit
-        end
-      | None -> Lwt.return_unit
-      end
-    ) strings_dir_files
-  in
-  let t1 = Time_now.nanoseconds_since_unix_epoch () in
-  Lwt_io.write_line Lwt_io.stdout (sprintf "Completed. (%sms)" Int63.(to_string ((t1 - t0) / (of_int 1_000_000))))
 
 let () =
   Lwt_main.run (
