@@ -61,7 +61,7 @@ let parse ~filename ic ~f =
   begin match result with
   | Ok (parsed, "") -> f ~filename parsed
   | Ok (_, unparsed) ->
-    failwithf "Could not process data starting at:\n%s"
+    failwithf "Could not process [%s] starting at:\n%s" filename
       (Yojson.Basic.to_string (`String (String.slice unparsed 0 Int.(min 20 (String.length unparsed))))) ()
   | Error err -> failwithf "Syntax Error: %s" err ()
   end

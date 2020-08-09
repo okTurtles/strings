@@ -1,7 +1,7 @@
 (library
   (name utils)
   (libraries
-    core_kernel
+    core
     lwt
     lwt.unix
     lwt_ppx

@@ -1,6 +1,6 @@
 
 opam-version: "2.0"
-maintainer: ""
+maintainer: "Simon Grondin"
 authors: [
   "Simon Grondin"
 ]
@@ -18,7 +18,7 @@ depends: [
 
   "angstrom"
   "angstrom-lwt-unix"
-  "core"
+  "core" { = "v0.14.0" }
   "lwt"
   "lwt_ppx"
   "ppx_deriving"
@@ -26,7 +26,6 @@ depends: [
   "ppx_gen_rec"
   "sedlex"
   "stdlib-shims"
-  "utop"
   "yojson"
   "wtf8"
 ]

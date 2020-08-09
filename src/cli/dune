@@ -6,7 +6,7 @@
 
     stdlib-shims
     angstrom-lwt-unix
-    core_kernel
+    core
     lwt
     lwt.unix
     lwt_ppx

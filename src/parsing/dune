@@ -3,8 +3,9 @@
   (libraries
     core_kernel
 
-    angstrom-lwt-unix
     flow_parser
+
+    angstrom-lwt-unix
     lwt
     lwt_ppx
   )

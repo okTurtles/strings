@@ -47,7 +47,10 @@ Place it at the root of the repository.
 
 Simply run it before submitting a Pull Request!
 ```sh
-./strings.exe frontend
+./strings.mac frontend
 ```
-
-At the moment only MacOS (Mojave and later) is supported.
+**MacOS**: Mojave and later.
+**Linux** and **WSL**:
+- Ubuntu 14.04+
+- Debian 8+
+- Your distribution is supported if `ldd --version` displays `GLIBC 2.19` or later.
