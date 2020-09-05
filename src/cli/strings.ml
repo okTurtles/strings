@@ -187,7 +187,7 @@ let main args =
           let path = sprintf "strings/%s" filename in
           begin match%lwt Lwt_unix.stat path with
           | { st_kind = S_REG; _ } ->
-            let%lwt other = Lwt_io.with_file ~mode:Input ~flags:read_flags path Parsing.Strings.parse in
+            let%lwt other = Lwt_io.with_file ~mode:Input ~flags:read_flags path (Parsing.Strings.parse ~filename) in
             write_other ~language english other
           | _ -> Lwt.return_unit
           end

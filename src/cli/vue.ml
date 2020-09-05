@@ -55,13 +55,13 @@ let parse ~filename ic ~f =
       Css.parser >>| (fun () -> Css);
     ]
   in
-  let parser = lift2 (fun x y -> x, y) (sep_by mlws1 languages) (mlws *> take_while (fun _ -> true)) in
+  let parser = lift2 Tuple2.create (sep_by mlws1 languages) (mlws *> take_while (fun _ -> true)) in
 
   let%lwt _unconsumed, result = Angstrom_lwt_unix.parse parser ic in
   begin match result with
   | Ok (parsed, "") -> f ~filename parsed
   | Ok (_, unparsed) ->
-    failwithf "Could not process [%s] starting at:\n%s" filename
-      (Yojson.Basic.to_string (`String (String.slice unparsed 0 Int.(min 20 (String.length unparsed))))) ()
+    failwithf "The file [%s] contains invalid syntax or Pug features unsupported by this tool.\nPlease report this so it can be improved.\nThe unsupported syntax starts at:\n%s"
+      filename (Yojson.Basic.to_string (`String (String.slice unparsed 0 Int.(min 20 (String.length unparsed))))) ()
   | Error err -> failwithf "Syntax Error: %s" err ()
   end
