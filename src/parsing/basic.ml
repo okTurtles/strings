@@ -46,7 +46,6 @@ let escapable_string_parser ~escape ~separator =
           return result
 
         | c, true ->
-          Buffer.add_char buf escape;
           Buffer.add_char buf c;
           loop false
 

@@ -16,7 +16,7 @@ sed -i 's/Pervasives/Stdlib/g' flow/src/parser/parser_flow.ml
 
 ### MacOS - Build & Run
 ```bash
-dune build src/cli/strings.exe && cp _build/default/src/cli/strings.exe strings.mac && strip strings.mac
+DUNE_PROFILE=release dune build src/cli/strings.exe && cp _build/default/src/cli/strings.exe strings.mac && strip strings.mac
 
 ./strings.mac ../group-income-simple/
 ```
