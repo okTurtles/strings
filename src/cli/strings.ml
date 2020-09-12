@@ -12,6 +12,13 @@ let () = Lwt.async_exception_hook := (fun ex ->
     |> ignore
   )
 
+let time () =
+  let t0 = Time_now.nanoseconds_since_unix_epoch () in
+  fun () ->
+    let t1 = Time_now.nanoseconds_since_unix_epoch () in
+    let diff = Int63.(-) t1 t0 in
+    sprintf "%sms" Int63.(to_string (diff / (of_int 1_000_000)))
+
 let pool = Lwt_pool.create 6 (fun () -> Lwt.return_unit)
 let read_flags = Unix.[O_RDONLY; O_NONBLOCK]
 let write_flags = Unix.[O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT]
@@ -57,6 +64,7 @@ let json_pair left right first =
   sprintf "%s\n  %s: %s" (if !first then begin first := false; "" end else ",") left right
 
 let write_english english =
+  let time = time () in
   let path_strings = "strings/english.strings" in
   let path_json = "strings/english.json" in
   let first = ref true in
@@ -80,10 +88,11 @@ let write_english english =
       )
     )
   in
-  Lwt_io.printlf "✅ Generated '%s' and '%s' with:\n- %d unique strings\n"
-    path_strings path_json (String.Table.length english)
+  Lwt_io.printlf "✅ [%s] Generated '%s' and '%s' with:\n- %d unique strings\n"
+    (time ()) path_strings path_json (String.Table.length english)
 
 let write_other ~language english other =
+  let time = time () in
   let path_strings = sprintf "strings/%s.strings" language in
   let path_json = sprintf "strings/%s.json" language in
   let%lwt n_left, n_right, n_both =
@@ -139,8 +148,8 @@ let write_other ~language english other =
       )
     )
   in
-  Lwt_io.printlf "✅ Generated '%s' and '%s' with:\n- %d new strings\n- %d existing strings\n- %d unused strings\n"
-    path_strings path_json n_left n_both n_right
+  Lwt_io.printlf "✅ [%s] Generated '%s' and '%s' with:\n- %d new strings\n- %d existing strings\n- %d unused strings\n"
+    (time ()) path_strings path_json n_left n_both n_right
 
 let directory_exists path =
   begin match%lwt Lwt_unix.stat path with
@@ -181,6 +190,7 @@ let main args =
       let english_list = String.Table.create () in
       let count_vue = ref 0 in
       let count_js = ref 0 in
+      let time = time () in
       let%lwt () = Lwt_list.iter_p (fun directory ->
           let root = (String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory) in
           traverse ~root:(sprintf "%s/" root) ~count_vue ~count_js english_list root
@@ -190,8 +200,9 @@ let main args =
           String.Set.to_array set |> String.concat_array ~sep:", "
         )
       in
-      let%lwt () = Lwt_io.printlf "✅ Processed %d .vue files" !count_vue in
-      let%lwt () = Lwt_io.printlf "✅ Processed %d .js files" !count_js in
+      let%lwt () = Lwt_io.printlf "✅ [%s] Processed %d .vue files and %d .js files"
+          (time ()) !count_vue !count_js
+      in
       let%lwt () = write_english english in
       Lwt.return english
     in
