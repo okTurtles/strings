@@ -4,7 +4,7 @@ open Flow_ast
 let extract strings stmts =
   let rec extract_expr_or_spread = function
     | Expression.Expression expr -> extract_expression expr
-    | Expression.Spread (_, { argument }) -> extract_expression argument
+    | Expression.Spread (_, { argument; comments = _ }) -> extract_expression argument
   and extract_computed_key ComputedKey.(_, { comments = _; expression }) = extract_expression expression
   and extract_pattern = function
     | _, Pattern.Object { properties; annot = _ } ->
@@ -17,7 +17,7 @@ let extract strings stmts =
           | Pattern.Object.Property.Computed key -> extract_computed_key key);
           extract_pattern pattern;
           Option.iter default ~f:extract_expression
-        | Pattern.Object.RestProperty (_, { argument }) -> extract_pattern argument)
+        | Pattern.Object.RestElement (_, { argument; comments = _ }) -> extract_pattern argument)
     | _, Pattern.Array { elements; annot = _; comments = _ } ->
       List.iter elements
         ~f:
@@ -25,7 +25,7 @@ let extract strings stmts =
             | Pattern.Array.Element (_, { argument; default }) ->
               extract_pattern argument;
               Option.iter default ~f:extract_expression
-            | Pattern.Array.RestElement (_, { argument }) -> extract_pattern argument))
+            | Pattern.Array.RestElement (_, { argument; comments = _ }) -> extract_pattern argument))
     | _, Pattern.Identifier _ -> ()
     | _, Pattern.Expression expr -> extract_expression expr
   and extract_predicate = function
@@ -43,6 +43,7 @@ let extract strings stmts =
          return = _;
          tparams = _;
          sig_loc = _;
+         comments = _;
        } =
     List.iter params ~f:(fun (_, { argument; default }) ->
         extract_pattern argument;
@@ -156,7 +157,7 @@ let extract strings stmts =
          |Expression.Object.Property (_, Set { key; value = _, fn }) ->
           extract_object_property_key key;
           extract_function fn
-        | Expression.Object.SpreadProperty (_, { argument }) -> extract_expression argument)
+        | Expression.Object.SpreadProperty (_, { argument; comments = _ }) -> extract_expression argument)
     | _, Expression.OptionalCall { call; optional = _ } -> extract_call call
     | _, Expression.OptionalMember { member; optional = _ } -> extract_member member
     | _, Expression.Sequence { expressions; comments = _ } -> List.iter expressions ~f:extract_expression
@@ -172,8 +173,8 @@ let extract strings stmts =
       extract_expression argument
     | _, Expression.Yield { argument; comments = _; delegate = _ } ->
       Option.iter argument ~f:extract_expression
-  and extract_type_object_properties =
-    List.iter ~f:(function
+  and extract_type_object Type.Object.{ exact = _; inexact = _; properties; comments = _ } =
+    List.iter properties ~f:(function
       | Type.Object.Property
           (_, { key; value = _; optional = _; static = _; proto = _; _method = _; variance = _ }) ->
         extract_object_property_key key
@@ -184,19 +185,10 @@ let extract strings stmts =
         ())
   and extract_declare_class
      Statement.DeclareClass.
-       {
-         id = _;
-         tparams = _;
-         body = _, { exact = _; inexact = _; properties };
-         extends = _;
-         mixins = _;
-         implements = _;
-       } =
-    extract_type_object_properties properties
-  and extract_interface
-     Statement.Interface.
-       { id = _; tparams = _; extends = _; body = _, { exact = _; inexact = _; properties } } =
-    extract_type_object_properties properties
+       { id = _; tparams = _; body = _, ty_obj; extends = _; mixins = _; implements = _ } =
+    extract_type_object ty_obj
+  and extract_interface Statement.Interface.{ id = _; tparams = _; extends = _; body = _, ty_obj } =
+    extract_type_object ty_obj
   and extract_variable_declaration Statement.VariableDeclaration.{ declarations; kind = _; comments = _ }
       =
     List.iter declarations ~f:(fun (_, { id; init }) ->
@@ -221,29 +213,32 @@ let extract strings stmts =
          |Statement.DeclareExportDeclaration.NamedOpaqueType _ ->
           ()
         | Statement.DeclareExportDeclaration.Interface
-            (_, { id = _; tparams = _; extends = _; body = _, { exact = _; inexact = _; properties } }) ->
-          extract_type_object_properties properties)
+            (_, { id = _; tparams = _; extends = _; body = _, ty_obj }) ->
+          extract_type_object ty_obj)
     | _, Statement.DeclareFunction { id = _; annot = _; predicate } ->
       Option.iter predicate ~f:extract_predicate
     | _, Statement.DeclareInterface interface -> extract_interface interface
     | _, Statement.DeclareModule { id = _; body = _, st_block; kind = _ } ->
       extract_statement_block st_block
     | _, Statement.DeclareModuleExports _ -> ()
-    | _, Statement.DeclareTypeAlias { id = _; tparams = _; right = _ } -> ()
-    | _, Statement.DeclareOpaqueType { id = _; tparams = _; impltype = _; supertype = _ } -> ()
+    | _, Statement.DeclareTypeAlias { id = _; tparams = _; right = _; comments = _ } -> ()
+    | _, Statement.DeclareOpaqueType { id = _; tparams = _; impltype = _; supertype = _; comments = _ } ->
+      ()
     | _, Statement.DeclareVariable { id = _; annot = _ } -> ()
     | _, Statement.DoWhile { body; test; comments = _ } ->
       extract_statement body;
       extract_expression test
     | _, Statement.Empty -> ()
     | _, Statement.EnumDeclaration _ -> ()
-    | _, Statement.ExportDefaultDeclaration { default = _; declaration } -> (
+    | _, Statement.ExportDefaultDeclaration { default = _; declaration; comments = _ } -> (
       match declaration with
       | Statement.ExportDefaultDeclaration.Declaration st -> extract_statement st
       | Statement.ExportDefaultDeclaration.Expression expr -> extract_expression expr)
-    | _, Statement.ExportNamedDeclaration { declaration; specifiers = _; source = _; exportKind = _ } ->
+    | ( _,
+        Statement.ExportNamedDeclaration
+          { declaration; specifiers = _; source = _; exportKind = _; comments = _ } ) ->
       Option.iter declaration ~f:extract_statement
-    | _, Statement.Expression { expression; directive = _ } -> extract_expression expression
+    | _, Statement.Expression { expression; directive = _; comments = _ } -> extract_expression expression
     | _, Statement.For { init; test; update; body } ->
       Option.iter init ~f:(function
         | Statement.For.InitDeclaration (_, vd) -> extract_variable_declaration vd
@@ -257,7 +252,7 @@ let extract strings stmts =
       | Statement.ForIn.LeftPattern pattern -> extract_pattern pattern);
       extract_expression right;
       extract_statement body
-    | _, Statement.ForOf { left; right; body; async = _ } ->
+    | _, Statement.ForOf { left; right; body; await = _ } ->
       (match left with
       | Statement.ForOf.LeftDeclaration (_, vd) -> extract_variable_declaration vd
       | Statement.ForOf.LeftPattern pattern -> extract_pattern pattern);
@@ -268,7 +263,10 @@ let extract strings stmts =
       extract_expression test;
       extract_statement consequent;
       Option.iter alternate ~f:extract_statement
-    | _, Statement.ImportDeclaration { importKind = _; source = _; default = _; specifiers = _ } -> ()
+    | ( _,
+        Statement.ImportDeclaration
+          { importKind = _; source = _; default = _; specifiers = _; comments = _ } ) ->
+      ()
     | _, Statement.InterfaceDeclaration interface -> extract_interface interface
     | _, Statement.Labeled { label = _; body; comments = _ } -> extract_statement body
     | _, Statement.Return { argument; comments = _ } -> Option.iter argument ~f:extract_expression
@@ -284,8 +282,8 @@ let extract strings stmts =
           Option.iter param ~f:extract_pattern;
           extract_statement_block st_block);
       Option.iter finalizer ~f:(fun (_, st_block) -> extract_statement_block st_block)
-    | _, Statement.TypeAlias { id = _; tparams = _; right = _ } -> ()
-    | _, Statement.OpaqueType { id = _; tparams = _; impltype = _; supertype = _ } -> ()
+    | _, Statement.TypeAlias { id = _; tparams = _; right = _; comments = _ } -> ()
+    | _, Statement.OpaqueType { id = _; tparams = _; impltype = _; supertype = _; comments = _ } -> ()
     | _, Statement.VariableDeclaration vd -> extract_variable_declaration vd
     | _, Statement.While { test; body; comments = _ } ->
       extract_expression test;
