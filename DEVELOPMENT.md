@@ -6,7 +6,7 @@ From the root of the repo:
 opam switch create . ocaml-variants.4.13.1+options --no-install
 opam install . --deps-only -t
 
-git clone --branch v0.146.0 --depth 1 git@github.com:facebook/flow.git flow
+git clone --branch v0.150.0 --depth 1 git@github.com:facebook/flow.git flow
 ln -s "$(pwd)/flow/src/parser" src/flow_parser
 
 # MacOS

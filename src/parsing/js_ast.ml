@@ -248,6 +248,9 @@ let extract strings stmts =
     | _, IndexedAccess { _object; index; comments = _ } ->
       extract_type _object;
       extract_type index
+    | _, OptionalIndexedAccess { indexed_access = { _object; index; comments = _ }; optional = _ } ->
+      extract_type _object;
+      extract_type index
     | _, Type.Union { types = t1, t2, ll; comments = _ } ->
       extract_type t1;
       extract_type t2;
