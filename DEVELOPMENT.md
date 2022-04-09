@@ -3,7 +3,8 @@
 ### Setup
 From the root of the repo:
 ```bash
-opam switch create . ocaml-variants.4.10.0+flambda --deps-only
+opam switch create . ocaml-variants.4.13.1+options --no-install
+opam install . --deps-only -t
 
 git clone --branch v0.120.1 --depth 1 git@github.com:facebook/flow.git flow
 ln -s "$(pwd)/flow/src/parser" src/flow_parser

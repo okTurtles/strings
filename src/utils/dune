@@ -2,12 +2,11 @@
   (name utils)
   (libraries
     core
+    unix
     lwt
     lwt.unix
-    lwt_ppx
   )
   (preprocess (pps
-    lwt_ppx
     ppx_sexp_conv
   ))
 )

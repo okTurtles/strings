@@ -1,17 +1,15 @@
 (library
   (name parsing)
   (libraries
-    core_kernel
+    core
 
     flow_parser
 
     angstrom-lwt-unix
     lwt
-    lwt_ppx
   )
   (preprocess (pps
     ppx_sexp_conv
     ppx_deriving_yojson
-    lwt_ppx
   ))
 )
