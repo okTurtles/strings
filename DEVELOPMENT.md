@@ -6,8 +6,9 @@ From the root of the repo:
 opam switch create . ocaml-variants.4.13.1+options --no-install
 opam install . --deps-only -t
 
-git clone --branch v0.150.0 --depth 1 git@github.com:facebook/flow.git flow
+git clone --branch v0.158.0 --depth 1 git@github.com:facebook/flow.git flow
 ln -s "$(pwd)/flow/src/parser" src/flow_parser
+ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
 
 # MacOS
 sed -i '' 's/Pervasives/Stdlib/g' flow/src/parser/parser_flow.ml
