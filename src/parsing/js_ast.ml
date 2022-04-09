@@ -29,13 +29,13 @@ let extract strings stmts =
     | _, Pattern.Identifier _ -> ()
     | _, Pattern.Expression expr -> extract_expression expr
   and extract_predicate = function
-    | _, Type.Predicate.Declared expr -> extract_expression expr
-    | _, Type.Predicate.Inferred -> ()
+    | _, Type.Predicate.{ kind = Declared expr; comments = _ } -> extract_expression expr
+    | _, Type.Predicate.{ kind = Inferred; comments = _ } -> ()
   and extract_function
      Function.
        {
          id = _;
-         params = _, { params; rest };
+         params = _, { params; rest; comments = _ };
          body;
          async = _;
          generator = _;
@@ -48,15 +48,22 @@ let extract strings stmts =
     List.iter params ~f:(fun (_, { argument; default }) ->
         extract_pattern argument;
         Option.iter default ~f:extract_expression);
-    Option.iter rest ~f:(fun (_, { argument }) -> extract_pattern argument);
+    Option.iter rest ~f:(fun (_, { argument; comments = _ }) -> extract_pattern argument);
     (match body with
     | Function.BodyBlock (_, st_block) -> extract_statement_block st_block
     | Function.BodyExpression expr -> extract_expression expr);
     Option.iter predicate ~f:extract_predicate
   and extract_class
      Class.
-       { id = _; body = _, { body }; tparams = _; extends; implements = _; classDecorators; comments = _ }
-      =
+       {
+         id = _;
+         body = _, { body; comments = _ };
+         tparams = _;
+         extends;
+         implements = _;
+         classDecorators;
+         comments = _;
+       } =
     let extract_class_property_value = function
       | Class.Property.Declared
        |Class.Property.Uninitialized ->
@@ -64,17 +71,18 @@ let extract strings stmts =
       | Class.Property.Initialized expr -> extract_expression expr
     in
     List.iter body ~f:(function
-      | Class.Body.Method (_, { kind = _; key; value = _, fn; static = _; decorators }) ->
+      | Class.Body.Method (_, { kind = _; key; value = _, fn; static = _; decorators; comments = _ }) ->
         extract_object_property_key key;
         extract_function fn;
-        List.iter decorators ~f:(fun (_, { expression }) -> extract_expression expression)
-      | Class.Body.Property (_, { key; value; annot = _; static = _; variance = _ }) ->
+        List.iter decorators ~f:(fun (_, { expression; comments = _ }) -> extract_expression expression)
+      | Class.Body.Property (_, { key; value; annot = _; static = _; variance = _; comments = _ }) ->
         extract_object_property_key key;
         extract_class_property_value value
-      | Class.Body.PrivateField (_, { key = _; value; annot = _; static = _; variance = _ }) ->
+      | Class.Body.PrivateField (_, { key = _; value; annot = _; static = _; variance = _; comments = _ })
+        ->
         extract_class_property_value value);
-    Option.iter extends ~f:(fun (_, { expr; targs = _ }) -> extract_expression expr);
-    List.iter classDecorators ~f:(fun (_, { expression }) -> extract_expression expression)
+    Option.iter extends ~f:(fun (_, { expr; targs = _; comments = _ }) -> extract_expression expr);
+    List.iter classDecorators ~f:(fun (_, { expression; comments = _ }) -> extract_expression expression)
   and extract_object_property_key = function
     | Expression.Object.Property.Literal _
      |Expression.Object.Property.Identifier _
@@ -153,8 +161,8 @@ let extract strings stmts =
           extract_object_property_key key;
           extract_expression value
         | Expression.Object.Property (_, Method { key; value = _, fn })
-         |Expression.Object.Property (_, Get { key; value = _, fn })
-         |Expression.Object.Property (_, Set { key; value = _, fn }) ->
+         |Expression.Object.Property (_, Get { key; value = _, fn; comments = _ })
+         |Expression.Object.Property (_, Set { key; value = _, fn; comments = _ }) ->
           extract_object_property_key key;
           extract_function fn
         | Expression.Object.SpreadProperty (_, { argument; comments = _ }) -> extract_expression argument)
@@ -176,7 +184,17 @@ let extract strings stmts =
   and extract_type_object Type.Object.{ exact = _; inexact = _; properties; comments = _ } =
     List.iter properties ~f:(function
       | Type.Object.Property
-          (_, { key; value = _; optional = _; static = _; proto = _; _method = _; variance = _ }) ->
+          ( _,
+            {
+              key;
+              value = _;
+              optional = _;
+              static = _;
+              proto = _;
+              _method = _;
+              variance = _;
+              comments = _;
+            } ) ->
         extract_object_property_key key
       | Type.Object.SpreadProperty _
        |Type.Object.Indexer _
@@ -185,9 +203,10 @@ let extract strings stmts =
         ())
   and extract_declare_class
      Statement.DeclareClass.
-       { id = _; tparams = _; body = _, ty_obj; extends = _; mixins = _; implements = _ } =
+       { id = _; tparams = _; body = _, ty_obj; extends = _; mixins = _; implements = _; comments = _ } =
     extract_type_object ty_obj
-  and extract_interface Statement.Interface.{ id = _; tparams = _; extends = _; body = _, ty_obj } =
+  and extract_interface
+     Statement.Interface.{ id = _; tparams = _; extends = _; body = _, ty_obj; comments = _ } =
     extract_type_object ty_obj
   and extract_variable_declaration Statement.VariableDeclaration.{ declarations; kind = _; comments = _ }
       =
@@ -202,10 +221,13 @@ let extract strings stmts =
     | _, Statement.Continue { label = _; comments = _ } -> ()
     | _, Statement.Debugger { comments = _ } -> ()
     | _, Statement.DeclareClass dc -> extract_declare_class dc
-    | _, Statement.DeclareExportDeclaration { default = _; declaration; specifiers = _; source = _ } ->
+    | ( _,
+        Statement.DeclareExportDeclaration
+          { default = _; declaration; specifiers = _; source = _; comments = _ } ) ->
       Option.iter declaration ~f:(function
         | Statement.DeclareExportDeclaration.Variable _ -> ()
-        | Statement.DeclareExportDeclaration.Function (_, { id = _; annot = _; predicate }) ->
+        | Statement.DeclareExportDeclaration.Function (_, { id = _; annot = _; predicate; comments = _ })
+          ->
           Option.iter predicate ~f:extract_predicate
         | Statement.DeclareExportDeclaration.Class (_, dc) -> extract_declare_class dc
         | Statement.DeclareExportDeclaration.DefaultType _
@@ -213,22 +235,22 @@ let extract strings stmts =
          |Statement.DeclareExportDeclaration.NamedOpaqueType _ ->
           ()
         | Statement.DeclareExportDeclaration.Interface
-            (_, { id = _; tparams = _; extends = _; body = _, ty_obj }) ->
+            (_, { id = _; tparams = _; extends = _; body = _, ty_obj; comments = _ }) ->
           extract_type_object ty_obj)
-    | _, Statement.DeclareFunction { id = _; annot = _; predicate } ->
+    | _, Statement.DeclareFunction { id = _; annot = _; predicate; comments = _ } ->
       Option.iter predicate ~f:extract_predicate
     | _, Statement.DeclareInterface interface -> extract_interface interface
-    | _, Statement.DeclareModule { id = _; body = _, st_block; kind = _ } ->
+    | _, Statement.DeclareModule { id = _; body = _, st_block; kind = _; comments = _ } ->
       extract_statement_block st_block
     | _, Statement.DeclareModuleExports _ -> ()
     | _, Statement.DeclareTypeAlias { id = _; tparams = _; right = _; comments = _ } -> ()
     | _, Statement.DeclareOpaqueType { id = _; tparams = _; impltype = _; supertype = _; comments = _ } ->
       ()
-    | _, Statement.DeclareVariable { id = _; annot = _ } -> ()
+    | _, Statement.DeclareVariable { id = _; annot = _; comments = _ } -> ()
     | _, Statement.DoWhile { body; test; comments = _ } ->
       extract_statement body;
       extract_expression test
-    | _, Statement.Empty -> ()
+    | _, Statement.Empty { comments = _ } -> ()
     | _, Statement.EnumDeclaration _ -> ()
     | _, Statement.ExportDefaultDeclaration { default = _; declaration; comments = _ } -> (
       match declaration with
@@ -239,20 +261,20 @@ let extract strings stmts =
           { declaration; specifiers = _; source = _; exportKind = _; comments = _ } ) ->
       Option.iter declaration ~f:extract_statement
     | _, Statement.Expression { expression; directive = _; comments = _ } -> extract_expression expression
-    | _, Statement.For { init; test; update; body } ->
+    | _, Statement.For { init; test; update; body; comments = _ } ->
       Option.iter init ~f:(function
         | Statement.For.InitDeclaration (_, vd) -> extract_variable_declaration vd
         | Statement.For.InitExpression expr -> extract_expression expr);
       Option.iter test ~f:extract_expression;
       Option.iter update ~f:extract_expression;
       extract_statement body
-    | _, Statement.ForIn { left; right; body; each = _ } ->
+    | _, Statement.ForIn { left; right; body; each = _; comments = _ } ->
       (match left with
       | Statement.ForIn.LeftDeclaration (_, vd) -> extract_variable_declaration vd
       | Statement.ForIn.LeftPattern pattern -> extract_pattern pattern);
       extract_expression right;
       extract_statement body
-    | _, Statement.ForOf { left; right; body; await = _ } ->
+    | _, Statement.ForOf { left; right; body; await = _; comments = _ } ->
       (match left with
       | Statement.ForOf.LeftDeclaration (_, vd) -> extract_variable_declaration vd
       | Statement.ForOf.LeftPattern pattern -> extract_pattern pattern);
@@ -272,7 +294,7 @@ let extract strings stmts =
     | _, Statement.Return { argument; comments = _ } -> Option.iter argument ~f:extract_expression
     | _, Statement.Switch { discriminant; cases; comments = _ } ->
       extract_expression discriminant;
-      List.iter cases ~f:(fun (_, { test; consequent }) ->
+      List.iter cases ~f:(fun (_, { test; consequent; comments = _ }) ->
           Option.iter test ~f:extract_expression;
           List.iter consequent ~f:extract_statement)
     | _, Statement.Throw { argument; comments = _ } -> extract_expression argument
