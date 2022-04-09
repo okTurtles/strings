@@ -12,3 +12,5 @@ src/prototype
 *.linux
 strings/
 flow/
+test/
+bad/

@@ -57,7 +57,7 @@ let rec traverse ~root ~count_vue ~count_js strings directory =
           process_file ~root strings count_js path ~f:(fun ic ->
               let+ source = Lwt_io.read ic in
               let parsed = Queue.create () in
-              Parsing.Js_ast.strings parsed source;
+              Parsing.Js_ast.strings ~filename:path parsed source;
               parsed)
         | { st_kind = S_DIR; _ } -> traverse ~root ~count_vue ~count_js strings path
         | _ -> Lwt.return_unit))
