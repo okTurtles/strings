@@ -245,6 +245,9 @@ let extract strings stmts =
       List.iter extends ~f:(fun (_, generic) -> extract_type_generic generic)
     | _, Type.Array { argument; comments = _ } -> extract_type argument
     | _, Type.Generic generic -> extract_type_generic generic
+    | _, IndexedAccess { _object; index; comments = _ } ->
+      extract_type _object;
+      extract_type index
     | _, Type.Union { types = t1, t2, ll; comments = _ } ->
       extract_type t1;
       extract_type t2;
