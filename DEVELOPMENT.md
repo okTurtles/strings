@@ -6,7 +6,7 @@ From the root of the repo:
 opam switch create . ocaml-variants.4.13.1+options --no-install
 opam install . --deps-only -t
 
-git clone --branch v0.164.0 --depth 1 git@github.com:facebook/flow.git flow
+git clone --branch v0.175.1 --depth 1 git@github.com:facebook/flow.git flow
 ln -s "$(pwd)/flow/src/parser" src/flow_parser
 ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
 ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
