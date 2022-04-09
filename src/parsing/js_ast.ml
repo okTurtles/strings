@@ -45,7 +45,7 @@ let extract strings stmts =
          comments = _;
        } =
     List.iter params ~f:(fun (_, { argument; default }) ->
-        Option.iter this_ ~f:(fun (_, (_, ty)) -> extract_type ty);
+        Option.iter this_ ~f:(fun (_, { annot = _, ty; comments = _ }) -> extract_type ty);
         extract_pattern argument;
         Option.iter default ~f:extract_expression);
     Option.iter rest ~f:(fun (_, { argument; comments = _ }) -> extract_pattern argument);
@@ -61,7 +61,7 @@ let extract strings stmts =
          tparams = _;
          extends;
          implements = _;
-         classDecorators;
+         class_decorators;
          comments = _;
        } =
     let extract_class_property_value = function
@@ -82,7 +82,7 @@ let extract strings stmts =
         ->
         extract_class_property_value value);
     Option.iter extends ~f:(fun (_, { expr; targs = _; comments = _ }) -> extract_expression expr);
-    List.iter classDecorators ~f:(fun (_, { expression; comments = _ }) -> extract_expression expression)
+    List.iter class_decorators ~f:(fun (_, { expression; comments = _ }) -> extract_expression expression)
   and extract_object_property_key = function
     | Expression.Object.Property.Literal _
      |Expression.Object.Property.Identifier _
@@ -216,7 +216,7 @@ let extract strings stmts =
     List.iter arguments ~f:extract_type
   and extract_type_generic Type.Generic.{ id = _; targs; comments = _ } =
     Option.iter targs ~f:extract_type_args
-  and extract_type = function
+  and extract_type : ('a, 'b) Type.t -> unit = function
     | _, Type.Any _ -> ()
     | _, Type.Mixed _ -> ()
     | _, Type.Empty _ -> ()
@@ -233,8 +233,8 @@ let extract strings stmts =
         Type.Function { tparams; params = _, { this_; params; rest; comments = _ }; return; comments = _ }
       ) ->
       Option.iter tparams ~f:(fun (_, { params; comments = _ }) -> List.iter params ~f:extract_type_param);
-      Option.iter this_ ~f:(fun (_, Type.Function.ThisParam.{ annot; comments = _ }) ->
-          extract_type annot);
+      Option.iter this_ ~f:(fun (_, Type.Function.ThisParam.{ annot = _, ty; comments = _ }) ->
+          extract_type ty);
       List.iter params ~f:(fun (_, { name = _; annot; optional = _ }) -> extract_type annot);
       Option.iter rest ~f:(fun (_, { argument = _, { name = _; annot; optional = _ }; comments = _ }) ->
           extract_type annot);
@@ -316,7 +316,7 @@ let extract strings stmts =
       | Statement.ExportDefaultDeclaration.Expression expr -> extract_expression expr)
     | ( _,
         Statement.ExportNamedDeclaration
-          { declaration; specifiers = _; source = _; exportKind = _; comments = _ } ) ->
+          { declaration; specifiers = _; source = _; export_kind = _; comments = _ } ) ->
       Option.iter declaration ~f:extract_statement
     | _, Statement.Expression { expression; directive = _; comments = _ } -> extract_expression expression
     | _, Statement.For { init; test; update; body; comments = _ } ->
@@ -345,7 +345,7 @@ let extract strings stmts =
       Option.iter alternate ~f:(fun (_, { body; comments = _ }) -> extract_statement body)
     | ( _,
         Statement.ImportDeclaration
-          { importKind = _; source = _; default = _; specifiers = _; comments = _ } ) ->
+          { import_kind = _; source = _; default = _; specifiers = _; comments = _ } ) ->
       ()
     | _, Statement.InterfaceDeclaration interface -> extract_interface interface
     | _, Statement.Labeled { label = _; body; comments = _ } -> extract_statement body
