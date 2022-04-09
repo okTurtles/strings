@@ -7,7 +7,7 @@ let extract strings stmts =
     | Expression.Spread (_, { argument; comments = _ }) -> extract_expression argument
   and extract_computed_key ComputedKey.(_, { comments = _; expression }) = extract_expression expression
   and extract_pattern = function
-    | _, Pattern.Object { properties; annot = _ } ->
+    | _, Pattern.Object { properties; annot = _; comments = _ } ->
       List.iter properties ~f:(function
         | Pattern.Object.Property (_, { key; pattern; default; shorthand = _ }) ->
           (match key with
@@ -89,9 +89,10 @@ let extract strings stmts =
      |Expression.Object.Property.PrivateName _ ->
       ()
     | Expression.Object.Property.Computed key -> extract_computed_key key
-  and extract_call Expression.Call.{ callee; arguments = _, args; targs = _; comments = _ } =
+  and extract_call
+     Expression.Call.{ callee; arguments = _, { arguments; comments = _ }; targs = _; comments = _ } =
     extract_expression callee;
-    List.iter args ~f:extract_expr_or_spread
+    List.iter arguments ~f:extract_expr_or_spread
   and extract_member Expression.Member.{ _object; property; comments = _ } =
     extract_expression _object;
     match property with
@@ -108,11 +109,11 @@ let extract strings stmts =
         Expression.Call
           {
             callee = _, Expression.Identifier (_, Identifier.{ name = "L"; comments = _ });
-            arguments = _, args;
+            arguments = _, { arguments; comments = _ };
             targs = _;
             comments = _;
           } ) ->
-      List.iter args ~f:(function
+      List.iter arguments ~f:(function
         | Expression.Expression (_, Expression.Literal { value = String s; raw = _; comments = _ }) ->
           Queue.enqueue strings s
         | Expression.Expression _
@@ -154,7 +155,8 @@ let extract strings stmts =
     | _, Expression.MetaProperty { meta = _; property = _; comments = _ } -> ()
     | _, Expression.New { callee; targs = _; arguments; comments = _ } ->
       extract_expression callee;
-      Option.iter arguments ~f:(fun (_, ll) -> List.iter ll ~f:extract_expr_or_spread)
+      Option.iter arguments ~f:(fun (_, { arguments; comments = _ }) ->
+          List.iter arguments ~f:extract_expr_or_spread)
     | _, Expression.Object { properties; comments = _ } ->
       List.iter properties ~f:(function
         | Expression.Object.Property (_, Init { key; value; shorthand = _ }) ->
@@ -284,7 +286,7 @@ let extract strings stmts =
     | _, Statement.If { test; consequent; alternate; comments = _ } ->
       extract_expression test;
       extract_statement consequent;
-      Option.iter alternate ~f:extract_statement
+      Option.iter alternate ~f:(fun { body; comments = _ } -> extract_statement body)
     | ( _,
         Statement.ImportDeclaration
           { importKind = _; source = _; default = _; specifiers = _; comments = _ } ) ->
