@@ -334,12 +334,12 @@ let strings ?filename queue source =
     failwith (Buffer.contents buf)
   | ast, [] -> (
     match ast with
-    | _loc, stmts, _comments ->
-      (* sprintf "Statements: %s" (List.map stmts ~f:(fun stmt ->
+    | _, Program.{ statements; comments = _; all_comments = _ } ->
+      (* sprintf "Statements: %s" (List.map statements ~f:(fun stmt ->
           Format.asprintf "%a" (Statement.pp (fun _ _ -> ()) (fun _ _ -> ())) stmt
          ) |> String.concat ~sep:", ")
          |> print_endline; *)
-      extract queue stmts)
+      extract queue statements)
   | exception exn ->
     Option.iter filename ~f:(fun filename -> print_endline (sprintf "Parsing error in %s" filename));
     raise exn
