@@ -34,7 +34,7 @@ let extract strings stmts =
      Function.
        {
          id = _;
-         params = _, { params; rest; comments = _ };
+         params = _, { params; rest; this_; comments = _ };
          body;
          async = _;
          generator = _;
@@ -45,6 +45,7 @@ let extract strings stmts =
          comments = _;
        } =
     List.iter params ~f:(fun (_, { argument; default }) ->
+        Option.iter this_ ~f:(fun (_, (_, ty)) -> extract_type ty);
         extract_pattern argument;
         Option.iter default ~f:extract_expression);
     Option.iter rest ~f:(fun (_, { argument; comments = _ }) -> extract_pattern argument);
@@ -205,6 +206,59 @@ let extract strings stmts =
        |Type.Object.CallProperty _
        |Type.Object.InternalSlot _ ->
         ())
+  and extract_type_annotation_or_hint = function
+    | Type.Missing _ -> ()
+    | Type.Available (_, annotation) -> extract_type annotation
+  and extract_type_param (_, Type.TypeParam.{ name = _; bound; variance = _; default }) =
+    extract_type_annotation_or_hint bound;
+    Option.iter default ~f:extract_type
+  and extract_type_args (_, Type.TypeArgs.{ arguments; comments = _ }) =
+    List.iter arguments ~f:extract_type
+  and extract_type_generic Type.Generic.{ id = _; targs; comments = _ } =
+    Option.iter targs ~f:extract_type_args
+  and extract_type = function
+    | _, Type.Any _ -> ()
+    | _, Type.Mixed _ -> ()
+    | _, Type.Empty _ -> ()
+    | _, Type.Void _ -> ()
+    | _, Type.Null _ -> ()
+    | _, Type.Number _ -> ()
+    | _, Type.BigInt _ -> ()
+    | _, Type.String _ -> ()
+    | _, Type.Boolean _ -> ()
+    | _, Type.Symbol _ -> ()
+    | _, Type.Exists _ -> ()
+    | _, Type.Nullable { argument; comments = _ } -> extract_type argument
+    | ( _,
+        Type.Function { tparams; params = _, { this_; params; rest; comments = _ }; return; comments = _ }
+      ) ->
+      Option.iter tparams ~f:(fun (_, { params; comments = _ }) -> List.iter params ~f:extract_type_param);
+      Option.iter this_ ~f:(fun (_, Type.Function.ThisParam.{ annot; comments = _ }) ->
+          extract_type annot);
+      List.iter params ~f:(fun (_, { name = _; annot; optional = _ }) -> extract_type annot);
+      Option.iter rest ~f:(fun (_, { argument = _, { name = _; annot; optional = _ }; comments = _ }) ->
+          extract_type annot);
+      extract_type return
+    | _, Type.Object obj -> extract_type_object obj
+    | _, Type.Interface { body = _, obj; extends; comments = _ } ->
+      extract_type_object obj;
+      List.iter extends ~f:(fun (_, generic) -> extract_type_generic generic)
+    | _, Type.Array { argument; comments = _ } -> extract_type argument
+    | _, Type.Generic generic -> extract_type_generic generic
+    | _, Type.Union { types = t1, t2, ll; comments = _ } ->
+      extract_type t1;
+      extract_type t2;
+      List.iter ll ~f:extract_type
+    | _, Type.Intersection { types = t1, t2, ll; comments = _ } ->
+      extract_type t1;
+      extract_type t2;
+      List.iter ll ~f:extract_type
+    | _, Type.Typeof { argument; internal = _; comments = _ } -> extract_type argument
+    | _, Type.Tuple { types; comments = _ } -> List.iter types ~f:extract_type
+    | _, Type.StringLiteral _ -> ()
+    | _, Type.NumberLiteral _ -> ()
+    | _, Type.BigIntLiteral _ -> ()
+    | _, Type.BooleanLiteral _ -> ()
   and extract_declare_class
      Statement.DeclareClass.
        { id = _; tparams = _; body = _, ty_obj; extends = _; mixins = _; implements = _; comments = _ } =
