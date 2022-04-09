@@ -259,7 +259,7 @@ let extract strings stmts =
       extract_type t1;
       extract_type t2;
       List.iter ll ~f:extract_type
-    | _, Type.Typeof { argument; internal = _; comments = _ } -> extract_type argument
+    | _, Type.Typeof { argument; comments = _ } -> extract_type argument
     | _, Type.Tuple { types; comments = _ } -> List.iter types ~f:extract_type
     | _, Type.StringLiteral _ -> ()
     | _, Type.NumberLiteral _ -> ()
