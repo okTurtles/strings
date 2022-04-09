@@ -19,13 +19,12 @@ let extract strings stmts =
           Option.iter default ~f:extract_expression
         | Pattern.Object.RestElement (_, { argument; comments = _ }) -> extract_pattern argument)
     | _, Pattern.Array { elements; annot = _; comments = _ } ->
-      List.iter elements
-        ~f:
-          (Option.iter ~f:(function
-            | Pattern.Array.Element (_, { argument; default }) ->
-              extract_pattern argument;
-              Option.iter default ~f:extract_expression
-            | Pattern.Array.RestElement (_, { argument; comments = _ }) -> extract_pattern argument))
+      List.iter elements ~f:(function
+        | Pattern.Array.Element (_, { argument; default }) ->
+          extract_pattern argument;
+          Option.iter default ~f:extract_expression
+        | Pattern.Array.RestElement (_, { argument; comments = _ }) -> extract_pattern argument
+        | Pattern.Array.Hole _ -> ())
     | _, Pattern.Identifier _ -> ()
     | _, Pattern.Expression expr -> extract_expression expr
   and extract_predicate = function
@@ -121,7 +120,10 @@ let extract strings stmts =
           ())
     (* All expressions *)
     | _, Expression.Array { elements; comments = _ } ->
-      List.iter elements ~f:(Option.iter ~f:extract_expr_or_spread)
+      List.iter elements ~f:(function
+        | Expression expr -> extract_expression expr
+        | Spread (_, { argument; comments = _ }) -> extract_expression argument
+        | Hole _ -> ())
     | _, Expression.ArrowFunction fn -> extract_function fn
     | _, Expression.Assignment { operator = _; left; right; comments = _ } ->
       extract_pattern left;
@@ -286,7 +288,7 @@ let extract strings stmts =
     | _, Statement.If { test; consequent; alternate; comments = _ } ->
       extract_expression test;
       extract_statement consequent;
-      Option.iter alternate ~f:(fun { body; comments = _ } -> extract_statement body)
+      Option.iter alternate ~f:(fun (_, { body; comments = _ }) -> extract_statement body)
     | ( _,
         Statement.ImportDeclaration
           { importKind = _; source = _; default = _; specifiers = _; comments = _ } ) ->
