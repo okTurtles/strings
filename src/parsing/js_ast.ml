@@ -7,7 +7,8 @@ let extract strings stmts =
     | Expression.Spread (_, { argument; comments = _ }) -> extract_expression argument
   and extract_computed_key ComputedKey.(_, { comments = _; expression }) = extract_expression expression
   and extract_pattern = function
-    | _, Pattern.Object { properties; annot = _; comments = _ } ->
+    | _, Pattern.Object { properties; annot; comments = _ } ->
+      extract_type_annotation_or_hint annot;
       List.iter properties ~f:(function
         | Pattern.Object.Property (_, { key; pattern; default; shorthand = _ }) ->
           (match key with
@@ -18,14 +19,15 @@ let extract strings stmts =
           extract_pattern pattern;
           Option.iter default ~f:extract_expression
         | Pattern.Object.RestElement (_, { argument; comments = _ }) -> extract_pattern argument)
-    | _, Pattern.Array { elements; annot = _; comments = _ } ->
+    | _, Pattern.Array { elements; annot; comments = _ } ->
       List.iter elements ~f:(function
         | Pattern.Array.Element (_, { argument; default }) ->
           extract_pattern argument;
           Option.iter default ~f:extract_expression
         | Pattern.Array.RestElement (_, { argument; comments = _ }) -> extract_pattern argument
-        | Pattern.Array.Hole _ -> ())
-    | _, Pattern.Identifier _ -> ()
+        | Pattern.Array.Hole _ -> ());
+      extract_type_annotation_or_hint annot
+    | _, Pattern.Identifier { name = _; annot; optional = _ } -> extract_type_annotation_or_hint annot
     | _, Pattern.Expression expr -> extract_expression expr
   and extract_predicate = function
     | _, Type.Predicate.{ kind = Declared expr; comments = _ } -> extract_expression expr
@@ -39,8 +41,8 @@ let extract strings stmts =
          async = _;
          generator = _;
          predicate;
-         return = _;
-         tparams = _;
+         return;
+         tparams;
          sig_loc = _;
          comments = _;
        } =
@@ -52,36 +54,44 @@ let extract strings stmts =
     (match body with
     | Function.BodyBlock (_, st_block) -> extract_statement_block st_block
     | Function.BodyExpression expr -> extract_expression expr);
-    Option.iter predicate ~f:extract_predicate
+    Option.iter predicate ~f:extract_predicate;
+    extract_type_annotation_or_hint return;
+    Option.iter tparams ~f:extract_type_params
+  and extract_class_property_value = function
+    | Class.Property.Declared
+     |Class.Property.Uninitialized ->
+      ()
+    | Class.Property.Initialized expr -> extract_expression expr
+  and extract_implements (_, Class.Implements.{ interfaces; comments = _ }) =
+    List.iter interfaces ~f:(fun (_, { id = _; targs }) -> Option.iter targs ~f:extract_type_args)
   and extract_class
      Class.
        {
          id = _;
          body = _, { body; comments = _ };
-         tparams = _;
+         tparams;
          extends;
-         implements = _;
+         implements;
          class_decorators;
          comments = _;
        } =
-    let extract_class_property_value = function
-      | Class.Property.Declared
-       |Class.Property.Uninitialized ->
-        ()
-      | Class.Property.Initialized expr -> extract_expression expr
-    in
     List.iter body ~f:(function
       | Class.Body.Method (_, { kind = _; key; value = _, fn; static = _; decorators; comments = _ }) ->
         extract_object_property_key key;
         extract_function fn;
         List.iter decorators ~f:(fun (_, { expression; comments = _ }) -> extract_expression expression)
-      | Class.Body.Property (_, { key; value; annot = _; static = _; variance = _; comments = _ }) ->
+      | Class.Body.Property (_, { key; value; annot; static = _; variance = _; comments = _ }) ->
         extract_object_property_key key;
-        extract_class_property_value value
-      | Class.Body.PrivateField (_, { key = _; value; annot = _; static = _; variance = _; comments = _ })
-        ->
-        extract_class_property_value value);
-    Option.iter extends ~f:(fun (_, { expr; targs = _; comments = _ }) -> extract_expression expr);
+        extract_class_property_value value;
+        extract_type_annotation_or_hint annot
+      | Class.Body.PrivateField (_, { key = _; value; annot; static = _; variance = _; comments = _ }) ->
+        extract_class_property_value value;
+        extract_type_annotation_or_hint annot);
+    Option.iter tparams ~f:extract_type_params;
+    Option.iter extends ~f:(fun (_, { expr; targs; comments = _ }) ->
+        extract_expression expr;
+        Option.iter targs ~f:extract_type_args);
+    Option.iter implements ~f:extract_implements;
     List.iter class_decorators ~f:(fun (_, { expression; comments = _ }) -> extract_expression expression)
   and extract_object_property_key = function
     | Expression.Object.Property.Literal _
@@ -89,10 +99,15 @@ let extract strings stmts =
      |Expression.Object.Property.PrivateName _ ->
       ()
     | Expression.Object.Property.Computed key -> extract_computed_key key
+  and extract_call_type_args (_, Expression.CallTypeArgs.{ arguments; comments = _ }) =
+    List.iter arguments ~f:(function
+      | Explicit ty -> extract_type ty
+      | Implicit _ -> ())
   and extract_call
-     Expression.Call.{ callee; arguments = _, { arguments; comments = _ }; targs = _; comments = _ } =
+     Expression.Call.{ callee; arguments = _, { arguments; comments = _ }; targs; comments = _ } =
     extract_expression callee;
-    List.iter arguments ~f:extract_expr_or_spread
+    List.iter arguments ~f:extract_expr_or_spread;
+    Option.iter targs ~f:extract_call_type_args
   and extract_member Expression.Member.{ _object; property; comments = _ } =
     extract_expression _object;
     match property with
@@ -102,7 +117,42 @@ let extract strings stmts =
     | Expression.Member.PropertyExpression expr -> extract_expression expr
   and extract_template Expression.TemplateLiteral.{ quasis = _; expressions; comments = _ } =
     List.iter expressions ~f:extract_expression
-  and extract_import Expression.Import.{ argument; comments = _ } = extract_expression argument
+  and extract_jsx_element
+     JSX.
+       {
+         opening_element = _, { name = _; self_closing = _; attributes };
+         closing_element = _;
+         children = _, children;
+         comments = _;
+       } =
+    List.iter attributes ~f:(function
+      | SpreadAttribute (_, { argument; comments = _ }) -> extract_expression argument
+      | Attribute (_, { name = _; value = None }) -> ()
+      | Attribute (_, { name = _; value = Some v }) -> (
+        match v with
+        | Literal _ -> ()
+        | ExpressionContainer (_, { expression = EmptyExpression; comments = _ }) -> ()
+        | ExpressionContainer (_, { expression = Expression expr; comments = _ }) ->
+          extract_expression expr));
+    extract_jsx_children children
+  and extract_jsx_fragment
+     JSX.
+       {
+         frag_opening_element = _;
+         frag_closing_element = _;
+         frag_children = _, children;
+         frag_comments = _;
+       } =
+    extract_jsx_children children
+  and extract_jsx_children children =
+    List.iter children ~f:(function
+      | _, JSX.Element el -> extract_jsx_element el
+      | _, JSX.Fragment frag -> extract_jsx_fragment frag
+      | _, JSX.ExpressionContainer { expression = Expression expr; comments = _ } ->
+        extract_expression expr
+      | _, JSX.ExpressionContainer { expression = EmptyExpression; comments = _ } -> ()
+      | _, JSX.SpreadChild { expression; comments = _ } -> extract_expression expression
+      | _, JSX.Text _ -> ())
   and extract_expression = function
     (* Special case *)
     | ( _,
@@ -110,7 +160,7 @@ let extract strings stmts =
           {
             callee = _, Expression.Identifier (_, Identifier.{ name = "L"; comments = _ });
             arguments = _, { arguments; comments = _ };
-            targs = _;
+            targs;
             comments = _;
           } ) ->
       List.iter arguments ~f:(function
@@ -118,7 +168,8 @@ let extract strings stmts =
           Queue.enqueue strings s
         | Expression.Expression _
          |Expression.Spread _ ->
-          ())
+          ());
+      Option.iter targs ~f:extract_call_type_args
     (* All expressions *)
     | _, Expression.Array { elements; comments = _ } ->
       List.iter elements ~f:(function
@@ -146,18 +197,18 @@ let extract strings stmts =
       extract_expression alternate
     | _, Expression.Function fn -> extract_function fn
     | _, Expression.Identifier _ -> ()
-    | _, Expression.Import import -> extract_import import
-    | _, Expression.JSXElement _
-     |_, Expression.JSXFragment _ ->
-      ()
+    | _, Expression.Import { argument; comments = _ } -> extract_expression argument
+    | _, Expression.JSXElement el -> extract_jsx_element el
+    | _, Expression.JSXFragment frag -> extract_jsx_fragment frag
     | _, Expression.Literal _ -> ()
     | _, Expression.Logical { operator = _; left; right; comments = _ } ->
       extract_expression left;
       extract_expression right
     | _, Expression.Member member -> extract_member member
     | _, Expression.MetaProperty { meta = _; property = _; comments = _ } -> ()
-    | _, Expression.New { callee; targs = _; arguments; comments = _ } ->
+    | _, Expression.New { callee; targs; arguments; comments = _ } ->
       extract_expression callee;
+      Option.iter targs ~f:extract_call_type_args;
       Option.iter arguments ~f:(fun (_, { arguments; comments = _ }) ->
           List.iter arguments ~f:extract_expr_or_spread)
     | _, Expression.Object { properties; comments = _ } ->
@@ -180,7 +231,9 @@ let extract strings stmts =
       extract_template template
     | _, Expression.TemplateLiteral template -> extract_template template
     | _, Expression.This { comments = _ } -> ()
-    | _, Expression.TypeCast { expression; annot = _; comments = _ } -> extract_expression expression
+    | _, Expression.TypeCast { expression; annot = _, ty; comments = _ } ->
+      extract_expression expression;
+      extract_type ty
     | _, Expression.Unary { operator = _; argument; comments = _ }
      |_, Expression.Update { operator = _; argument; prefix = _; comments = _ } ->
       extract_expression argument
@@ -189,33 +242,43 @@ let extract strings stmts =
   and extract_type_object Type.Object.{ exact = _; inexact = _; properties; comments = _ } =
     List.iter properties ~f:(function
       | Type.Object.Property
-          ( _,
-            {
-              key;
-              value = _;
-              optional = _;
-              static = _;
-              proto = _;
-              _method = _;
-              variance = _;
-              comments = _;
-            } ) ->
+          (_, { key; value; optional = _; static = _; proto = _; _method = _; variance = _; comments = _ })
+        ->
+        (match value with
+        | Init ty -> extract_type ty
+        | Get (_, fn) -> extract_type_function fn
+        | Set (_, fn) -> extract_type_function fn);
         extract_object_property_key key
-      | Type.Object.SpreadProperty _
-       |Type.Object.Indexer _
-       |Type.Object.CallProperty _
-       |Type.Object.InternalSlot _ ->
-        ())
+      | Type.Object.SpreadProperty (_, { argument; comments = _ }) -> extract_type argument
+      | Type.Object.Indexer (_, { id = _; key; value; static = _; variance = _; comments = _ }) ->
+        extract_type key;
+        extract_type value
+      | Type.Object.CallProperty (_, { value = _, fn; static = _; comments = _ }) ->
+        extract_type_function fn
+      | Type.Object.InternalSlot
+          (_, { id = _; value; optional = _; static = _; _method = _; comments = _ }) ->
+        extract_type value)
   and extract_type_annotation_or_hint = function
     | Type.Missing _ -> ()
     | Type.Available (_, annotation) -> extract_type annotation
   and extract_type_param (_, Type.TypeParam.{ name = _; bound; variance = _; default }) =
     extract_type_annotation_or_hint bound;
     Option.iter default ~f:extract_type
+  and extract_type_params (_, Type.TypeParams.{ params; comments = _ }) =
+    List.iter params ~f:extract_type_param
   and extract_type_args (_, Type.TypeArgs.{ arguments; comments = _ }) =
     List.iter arguments ~f:extract_type
   and extract_type_generic Type.Generic.{ id = _; targs; comments = _ } =
     Option.iter targs ~f:extract_type_args
+  and extract_type_function
+     Type.Function.{ tparams; params = _, { this_; params; rest; comments = _ }; return; comments = _ } =
+    Option.iter tparams ~f:(fun (_, { params; comments = _ }) -> List.iter params ~f:extract_type_param);
+    Option.iter this_ ~f:(fun (_, Type.Function.ThisParam.{ annot = _, ty; comments = _ }) ->
+        extract_type ty);
+    List.iter params ~f:(fun (_, { name = _; annot; optional = _ }) -> extract_type annot);
+    Option.iter rest ~f:(fun (_, { argument = _, { name = _; annot; optional = _ }; comments = _ }) ->
+        extract_type annot);
+    extract_type return
   and extract_type : ('a, 'b) Type.t -> unit = function
     | _, Type.Any _ -> ()
     | _, Type.Mixed _ -> ()
@@ -229,16 +292,7 @@ let extract strings stmts =
     | _, Type.Symbol _ -> ()
     | _, Type.Exists _ -> ()
     | _, Type.Nullable { argument; comments = _ } -> extract_type argument
-    | ( _,
-        Type.Function { tparams; params = _, { this_; params; rest; comments = _ }; return; comments = _ }
-      ) ->
-      Option.iter tparams ~f:(fun (_, { params; comments = _ }) -> List.iter params ~f:extract_type_param);
-      Option.iter this_ ~f:(fun (_, Type.Function.ThisParam.{ annot = _, ty; comments = _ }) ->
-          extract_type ty);
-      List.iter params ~f:(fun (_, { name = _; annot; optional = _ }) -> extract_type annot);
-      Option.iter rest ~f:(fun (_, { argument = _, { name = _; annot; optional = _ }; comments = _ }) ->
-          extract_type annot);
-      extract_type return
+    | _, Type.Function fn -> extract_type_function fn
     | _, Type.Object obj -> extract_type_object obj
     | _, Type.Interface { body = _, obj; extends; comments = _ } ->
       extract_type_object obj;
@@ -267,10 +321,15 @@ let extract strings stmts =
     | _, Type.BooleanLiteral _ -> ()
   and extract_declare_class
      Statement.DeclareClass.
-       { id = _; tparams = _; body = _, ty_obj; extends = _; mixins = _; implements = _; comments = _ } =
-    extract_type_object ty_obj
-  and extract_interface
-     Statement.Interface.{ id = _; tparams = _; extends = _; body = _, ty_obj; comments = _ } =
+       { id = _; tparams; body = _, ty_obj; extends; mixins; implements; comments = _ } =
+    Option.iter tparams ~f:extract_type_params;
+    extract_type_object ty_obj;
+    Option.iter extends ~f:(fun (_, x) -> extract_type_generic x);
+    List.iter mixins ~f:(fun (_, x) -> extract_type_generic x);
+    Option.iter implements ~f:extract_implements
+  and extract_interface Statement.Interface.{ id = _; tparams; extends; body = _, ty_obj; comments = _ } =
+    Option.iter tparams ~f:extract_type_params;
+    List.iter extends ~f:(fun (_, x) -> extract_type_generic x);
     extract_type_object ty_obj
   and extract_variable_declaration Statement.VariableDeclaration.{ declarations; kind = _; comments = _ }
       =
@@ -278,6 +337,13 @@ let extract strings stmts =
         extract_pattern id;
         Option.iter init ~f:extract_expression)
   and extract_statement_block Statement.Block.{ body; comments = _ } = List.iter body ~f:extract_statement
+  and extract_type_alias Statement.TypeAlias.{ id = _; tparams; right; comments = _ } =
+    Option.iter tparams ~f:extract_type_params;
+    extract_type right
+  and extract_opaque_type Statement.OpaqueType.{ id = _; tparams; impltype; supertype; comments = _ } =
+    Option.iter tparams ~f:extract_type_params;
+    Option.iter impltype ~f:extract_type;
+    Option.iter supertype ~f:extract_type
   and extract_statement = function
     | _, Statement.Block st_block -> extract_statement_block st_block
     | _, Statement.Break { label = _; comments = _ } -> ()
@@ -289,28 +355,26 @@ let extract strings stmts =
         Statement.DeclareExportDeclaration
           { default = _; declaration; specifiers = _; source = _; comments = _ } ) ->
       Option.iter declaration ~f:(function
-        | Statement.DeclareExportDeclaration.Variable _ -> ()
-        | Statement.DeclareExportDeclaration.Function (_, { id = _; annot = _; predicate; comments = _ })
-          ->
+        | Statement.DeclareExportDeclaration.Variable (_, { id = _; annot = _, ty; comments = _ }) ->
+          extract_type ty
+        | Statement.DeclareExportDeclaration.Function
+            (_, { id = _; annot = _, ty; predicate; comments = _ }) ->
+          extract_type ty;
           Option.iter predicate ~f:extract_predicate
         | Statement.DeclareExportDeclaration.Class (_, dc) -> extract_declare_class dc
-        | Statement.DeclareExportDeclaration.DefaultType _
-         |Statement.DeclareExportDeclaration.NamedType _
-         |Statement.DeclareExportDeclaration.NamedOpaqueType _ ->
-          ()
-        | Statement.DeclareExportDeclaration.Interface
-            (_, { id = _; tparams = _; extends = _; body = _, ty_obj; comments = _ }) ->
-          extract_type_object ty_obj)
+        | Statement.DeclareExportDeclaration.DefaultType ty -> extract_type ty
+        | Statement.DeclareExportDeclaration.NamedType (_, alias) -> extract_type_alias alias
+        | Statement.DeclareExportDeclaration.NamedOpaqueType (_, opaque) -> extract_opaque_type opaque
+        | Statement.DeclareExportDeclaration.Interface (_, interface) -> extract_interface interface)
     | _, Statement.DeclareFunction { id = _; annot = _; predicate; comments = _ } ->
       Option.iter predicate ~f:extract_predicate
     | _, Statement.DeclareInterface interface -> extract_interface interface
     | _, Statement.DeclareModule { id = _; body = _, st_block; kind = _; comments = _ } ->
       extract_statement_block st_block
-    | _, Statement.DeclareModuleExports _ -> ()
-    | _, Statement.DeclareTypeAlias { id = _; tparams = _; right = _; comments = _ } -> ()
-    | _, Statement.DeclareOpaqueType { id = _; tparams = _; impltype = _; supertype = _; comments = _ } ->
-      ()
-    | _, Statement.DeclareVariable { id = _; annot = _; comments = _ } -> ()
+    | _, Statement.DeclareModuleExports { annot = _, ty; comments = _ } -> extract_type ty
+    | _, Statement.DeclareTypeAlias alias -> extract_type_alias alias
+    | _, Statement.DeclareOpaqueType opaque -> extract_opaque_type opaque
+    | _, Statement.DeclareVariable { id = _; annot = _, ty; comments = _ } -> extract_type ty
     | _, Statement.DoWhile { body; test; comments = _ } ->
       extract_statement body;
       extract_expression test
@@ -368,8 +432,8 @@ let extract strings stmts =
           Option.iter param ~f:extract_pattern;
           extract_statement_block st_block);
       Option.iter finalizer ~f:(fun (_, st_block) -> extract_statement_block st_block)
-    | _, Statement.TypeAlias { id = _; tparams = _; right = _; comments = _ } -> ()
-    | _, Statement.OpaqueType { id = _; tparams = _; impltype = _; supertype = _; comments = _ } -> ()
+    | _, Statement.TypeAlias alias -> extract_type_alias alias
+    | _, Statement.OpaqueType opaque -> extract_opaque_type opaque
     | _, Statement.VariableDeclaration vd -> extract_variable_declaration vd
     | _, Statement.While { test; body; comments = _ } ->
       extract_expression test;
