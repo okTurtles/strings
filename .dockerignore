@@ -15,3 +15,6 @@ strings/
 flow/
 test/
 bad/
+src/flow_parser
+src/sedlex
+src/collections

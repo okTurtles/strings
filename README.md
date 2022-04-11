@@ -49,8 +49,8 @@ Simply run it before submitting a Pull Request!
 ```sh
 ./strings.mac frontend
 ```
-- **MacOS**: Mojave and later.
+- **MacOS**: Monterey or newer
 - **Linux** and **WSL**
-  - Ubuntu 14.04+
-  - Debian 8+
-  - Your distribution is supported if `ldd --version` displays `GLIBC 2.19` or later.
+  - Ubuntu 20.04 or newer
+  - Debian 11 (Bullseye) or newer
+  - You'll need to install your Linux distribution's `musl` package: `apt-get install musl`

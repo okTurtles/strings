@@ -10,11 +10,6 @@ git clone --branch v0.175.1 --depth 1 git@github.com:facebook/flow.git flow
 ln -s "$(pwd)/flow/src/parser" src/flow_parser
 ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
 ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
-
-# MacOS
-sed -i '' 's/Pervasives/Stdlib/g' flow/src/parser/parser_flow.ml
-# Linux
-sed -i 's/Pervasives/Stdlib/g' flow/src/parser/parser_flow.ml
 ```
 
 ### MacOS - Build & Run
@@ -36,6 +31,8 @@ docker run -it --rm \
   -v "$(pwd):/app" \
   -v "$(realpath "$(pwd)/../group-income-simple"):/repo" \
   -w /repo \
-  ubuntu:18.04
-  # Then run: '/app/strings.linux .'
+  ubuntu:20.04
+  # Then run:
+  ## apt-get update && apt-get install musl
+  ## /app/strings.linux frontend
 ```
