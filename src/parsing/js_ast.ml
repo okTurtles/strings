@@ -366,7 +366,8 @@ let extract strings stmts =
         | Statement.DeclareExportDeclaration.NamedType (_, alias) -> extract_type_alias alias
         | Statement.DeclareExportDeclaration.NamedOpaqueType (_, opaque) -> extract_opaque_type opaque
         | Statement.DeclareExportDeclaration.Interface (_, interface) -> extract_interface interface)
-    | _, Statement.DeclareFunction { id = _; annot = _; predicate; comments = _ } ->
+    | _, Statement.DeclareFunction { id = _; annot = _, ty; predicate; comments = _ } ->
+      extract_type ty;
       Option.iter predicate ~f:extract_predicate
     | _, Statement.DeclareInterface interface -> extract_interface interface
     | _, Statement.DeclareModule { id = _; body = _, st_block; kind = _; comments = _ } ->
