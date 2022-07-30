@@ -222,8 +222,8 @@ let extract strings stmts =
           extract_object_property_key key;
           extract_function fn
         | Expression.Object.SpreadProperty (_, { argument; comments = _ }) -> extract_expression argument)
-    | _, Expression.OptionalCall { call; optional = _; filtered_type = _ } -> extract_call call
-    | _, Expression.OptionalMember { member; optional = _; filtered_type = _ } -> extract_member member
+    | _, Expression.OptionalCall { call; optional = _; filtered_out = _ } -> extract_call call
+    | _, Expression.OptionalMember { member; optional = _; filtered_out = _ } -> extract_member member
     | _, Expression.Sequence { expressions; comments = _ } -> List.iter expressions ~f:extract_expression
     | _, Expression.Super { comments = _ } -> ()
     | _, Expression.TaggedTemplate { tag; quasi = _, template; comments = _ } ->
@@ -237,7 +237,7 @@ let extract strings stmts =
     | _, Expression.Unary { operator = _; argument; comments = _ }
      |_, Expression.Update { operator = _; argument; prefix = _; comments = _ } ->
       extract_expression argument
-    | _, Expression.Yield { argument; comments = _; delegate = _ } ->
+    | _, Expression.Yield { argument; comments = _; delegate = _; result_out = _ } ->
       Option.iter argument ~f:extract_expression
   and extract_type_object Type.Object.{ exact = _; inexact = _; properties; comments = _ } =
     List.iter properties ~f:(function
@@ -419,8 +419,9 @@ let extract strings stmts =
       ()
     | _, Statement.InterfaceDeclaration interface -> extract_interface interface
     | _, Statement.Labeled { label = _; body; comments = _ } -> extract_statement body
-    | _, Statement.Return { argument; comments = _ } -> Option.iter argument ~f:extract_expression
-    | _, Statement.Switch { discriminant; cases; comments = _ } ->
+    | _, Statement.Return { argument; comments = _; return_out = _ } ->
+      Option.iter argument ~f:extract_expression
+    | _, Statement.Switch { discriminant; cases; comments = _; exhaustive_out = _ } ->
       extract_expression discriminant;
       List.iter cases ~f:(fun (_, { test; consequent; comments = _ }) ->
           Option.iter test ~f:extract_expression;

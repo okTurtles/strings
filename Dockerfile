@@ -14,7 +14,7 @@ RUN opam update \
 COPY . .
 
 RUN sudo chown -R opam /app \
-  && git clone --branch v0.179.0 --depth 1 https://github.com/facebook/flow.git flow \
+  && git clone --branch v0.180.1 --depth 1 https://github.com/facebook/flow.git flow \
   && ln -s "$(pwd)/flow/src/parser" src/flow_parser \
   && ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex \
   && ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections \
