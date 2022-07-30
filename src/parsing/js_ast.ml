@@ -222,8 +222,8 @@ let extract strings stmts =
           extract_object_property_key key;
           extract_function fn
         | Expression.Object.SpreadProperty (_, { argument; comments = _ }) -> extract_expression argument)
-    | _, Expression.OptionalCall { call; optional = _ } -> extract_call call
-    | _, Expression.OptionalMember { member; optional = _ } -> extract_member member
+    | _, Expression.OptionalCall { call; optional = _; filtered_type = _ } -> extract_call call
+    | _, Expression.OptionalMember { member; optional = _; filtered_type = _ } -> extract_member member
     | _, Expression.Sequence { expressions; comments = _ } -> List.iter expressions ~f:extract_expression
     | _, Expression.Super { comments = _ } -> ()
     | _, Expression.TaggedTemplate { tag; quasi = _, template; comments = _ } ->
