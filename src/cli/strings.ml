@@ -30,17 +30,17 @@ let read_flags = U.[ O_RDONLY; O_NONBLOCK ]
 
 let write_flags = U.[ O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT ]
 
-let process_file ~root strings count filename ~f =
+let process_file ~root strings count filename ~f:extract =
   Lwt_pool.use pool (fun () ->
       incr count;
-      let+ parsed = Lwt_io.with_file ~mode:Input ~flags:read_flags filename f in
+      let+ parsed = Lwt_io.with_file ~mode:Input ~flags:read_flags filename extract in
       Queue.iter parsed ~f:(fun string ->
           let data = String.chop_prefix filename ~prefix:root |> Option.value ~default:filename in
           String.Table.update strings string ~f:(function
             | None -> String.Set.add String.Set.empty data
             | Some set -> String.Set.add set data)))
 
-let rec traverse ~root ~count_vue ~count_js strings directory =
+let rec traverse ~root ~count_vue ~count_js strings js_file_errors directory =
   let* entries =
     Lwt_pool.use pool (fun () -> Lwt_unix.files_of_directory directory |> Lwt_stream.to_list)
   in
@@ -52,14 +52,15 @@ let rec traverse ~root ~count_vue ~count_js strings directory =
         let path = sprintf "%s/%s" directory filename in
         Lwt_unix.lstat path >>= function
         | { st_kind = S_REG; _ } when String.is_suffix ~suffix:".vue" filename ->
-          process_file ~root strings count_vue path ~f:(Vue.parse ~filename ~f:Vue.extract_strings)
+          process_file ~root strings count_vue path
+            ~f:(Vue.parse ~filename ~f:Vue.(extract_strings js_file_errors))
         | { st_kind = S_REG; _ } when String.is_suffix ~suffix:".js" filename ->
           process_file ~root strings count_js path ~f:(fun ic ->
-              let+ source = Lwt_io.read ic in
+              let* source = Lwt_io.read ic in
               let parsed = Queue.create () in
-              Parsing.Js_ast.strings ~filename:path parsed source;
+              let+ () = Parsing.Js_ast.strings_from_js ~filename:path parsed js_file_errors source in
               parsed)
-        | { st_kind = S_DIR; _ } -> traverse ~root ~count_vue ~count_js strings path
+        | { st_kind = S_DIR; _ } -> traverse ~root ~count_vue ~count_js strings js_file_errors path
         | _ -> Lwt.return_unit))
     entries
 
@@ -191,6 +192,7 @@ let main args =
         []
     in
     (* English *)
+    let js_file_errors = Queue.create () in
     let* english =
       let english_list = String.Table.create () in
       let count_vue = ref 0 in
@@ -200,7 +202,7 @@ let main args =
         Lwt_list.iter_p
           (fun directory ->
             let root = String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory in
-            traverse ~root:(sprintf "%s/" root) ~count_vue ~count_js english_list root)
+            traverse ~root:(sprintf "%s/" root) ~count_vue ~count_js english_list js_file_errors root)
           directories
       in
       let english =
@@ -230,6 +232,18 @@ let main args =
             | _ -> Lwt.return_unit)
           | None -> Lwt.return_unit)
         strings_dir_files
+    in
+    (* JS parse errors *)
+    let* () =
+      match Queue.length js_file_errors with
+      | 0 -> Lwt.return_unit
+      | len ->
+        let files =
+          Queue.to_array js_file_errors
+          |> Array.map ~f:(fun { filename; _ } -> sprintf "- %s" filename)
+          |> String.concat_array ~sep:"\n"
+        in
+        Lwt_io.printlf "❌ Encountered %d JS parsing errors. Files:\n%s\n" len files
     in
     let t1 = Time_now.nanoseconds_since_unix_epoch () in
     Lwt_io.write_line Lwt_io.stdout

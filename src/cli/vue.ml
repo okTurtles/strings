@@ -10,40 +10,45 @@ type language =
 
 type languages = language list [@@deriving sexp, yojson]
 
-let rec loop_pug queue Pug.{ selector; arguments; text; children } =
+let rec loop_pug strings Pug.{ selector; arguments; text; children } =
   (match text, selector with
-  | Some s, Element { parts = "i18n" :: _ } -> Queue.enqueue queue s
-  | Some s, _ -> (
-    try Js_ast.strings queue s with
-    | _exn -> ())
+  | Some s, Element { parts = "i18n" :: _ } -> Queue.enqueue strings s
+  | Some s, _ -> Js_ast.strings_from_pug strings s
   | None, _ -> ());
   List.iter arguments ~f:(fun { contents; _ } ->
-      Option.iter contents ~f:(fun source ->
-          try Js_ast.strings queue source with
-          | _exn -> ()));
-  Array.iter children ~f:(loop_pug queue)
+      Option.iter contents ~f:(fun source -> Js_ast.strings_from_pug strings source));
+  Array.iter children ~f:(loop_pug strings)
 
-let extract_strings ~filename parsed =
+let extract_strings ~filename js_file_errors languages =
   let strings = Queue.create () in
-  List.iter parsed ~f:(function
-    | Pug nodes -> Array.iter nodes ~f:(loop_pug strings)
-    | Js source -> (
-      try Js_ast.strings strings source with
-      | _exn -> failwithf "JS Syntax Error in %s" filename ())
-    | Css -> ());
-  Lwt.return strings
+  let+ () =
+    Lwt_list.iter_p
+      (function
+        | Pug nodes ->
+          Array.iter nodes ~f:(loop_pug strings);
+          Lwt.return_unit
+        | Js source -> Js_ast.strings_from_js ~filename strings js_file_errors source
+        | Css -> Lwt.return_unit)
+      languages
+  in
+  strings
 
-let debug_pug ~filename parsed =
-  Lwt_list.iter_s
-    (function
-      | Js _
-       |Css ->
-        Lwt.return_unit
-      | Pug nodes as lang ->
-        let* () = Lwt_io.printl (Pug.sexp_of_nodes nodes |> Sexp.to_string_hum) in
-        let* strings = extract_strings ~filename [ lang ] in
-        Lwt_io.printl (Queue.to_array strings |> String.concat_array ~sep:"\n"))
-    parsed
+let debug_pug ~filename languages =
+  let js_file_errors = Queue.create () in
+  let* () =
+    Lwt_list.iter_s
+      (function
+        | Js _
+         |Css ->
+          Lwt.return_unit
+        | Pug nodes as lang ->
+          let* () = Lwt_io.printl (Pug.sexp_of_nodes nodes |> Sexp.to_string_hum) in
+          let* strings = extract_strings ~filename js_file_errors [ lang ] in
+          Lwt_io.printl (Queue.to_array strings |> String.concat_array ~sep:"\n"))
+      languages
+  in
+  Lwt_io.printl
+    (Queue.to_array js_file_errors |> Array.map ~f:Failed.to_string |> String.concat_array ~sep:"\n")
 
 let parse ~filename ic ~f =
   let open Angstrom in

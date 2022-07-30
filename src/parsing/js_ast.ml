@@ -445,25 +445,49 @@ let extract strings stmts =
 
   List.iter stmts ~f:extract_statement
 
-let strings ?filename queue source =
+let errors_to_string errors =
+  let buf = Buffer.create 128 in
+  List.iter errors ~f:(fun (loc, err) ->
+      Buffer.add_string buf "Error at line ";
+      Loc.show loc |> Buffer.add_string buf;
+      Buffer.add_string buf ":\n";
+      Parse_error.PP.error err |> Buffer.add_string buf;
+      Buffer.add_char buf '\n');
+  Buffer.contents buf
+
+let parse_error ~filename js_file_errors errors =
+  let open Lwt.Syntax in
+  let message = errors_to_string errors in
+  let+ () = Lwt_io.eprintlf "Parsing error in %s:\n%s" filename message in
+  Queue.enqueue js_file_errors Failed.{ filename; message }
+
+let debug statements =
+  sprintf "Statements: %s"
+    (List.map statements ~f:(fun stmt ->
+         Format.asprintf "%a" (Statement.pp (fun _ _ -> ()) (fun _ _ -> ())) stmt)
+    |> String.concat ~sep:", ")
+  |> print_endline
+
+let strings_from_pug parsed source =
   match Parser_flow.program source with
-  | _, (_ :: _ as errors) ->
-    let buf = Buffer.create 128 in
-    List.iter errors ~f:(fun (loc, err) ->
-        Buffer.add_string buf "Error at line ";
-        Loc.show loc |> Buffer.add_string buf;
-        Buffer.add_string buf ":\n";
-        Parse_error.PP.error err |> Buffer.add_string buf;
-        Buffer.add_char buf '\n');
-    failwith (Buffer.contents buf)
+  | _, _ :: _ -> ()
   | ast, [] -> (
     match ast with
     | _, Program.{ statements; comments = _; all_comments = _ } ->
-      (* sprintf "Statements: %s" (List.map statements ~f:(fun stmt ->
-          Format.asprintf "%a" (Statement.pp (fun _ _ -> ()) (fun _ _ -> ())) stmt
-         ) |> String.concat ~sep:", ")
-         |> print_endline; *)
-      extract queue statements)
+      (* debug statements; *)
+      extract parsed statements)
+  | exception _ -> ()
+
+let strings_from_js ~filename parsed js_file_errors source =
+  match Parser_flow.program source with
+  | _, (_ :: _ as errors) -> failwith (errors_to_string errors)
+  | ast, [] -> (
+    match ast with
+    | _, Program.{ statements; comments = _; all_comments = _ } ->
+      (* debug statements; *)
+      extract parsed statements;
+      Lwt.return_unit)
+  | exception Parse_error.Error (_, (_ :: _ as errors)) -> parse_error ~filename js_file_errors errors
   | exception exn ->
-    Option.iter filename ~f:(fun filename -> print_endline (sprintf "Parsing error in %s" filename));
+    print_endline (sprintf "Unexpected error in %s\nPlease report this bug." filename);
     raise exn
