@@ -449,18 +449,23 @@ let extract strings stmts =
 
 let errors_to_string errors =
   let buf = Buffer.create 128 in
-  List.iter errors ~f:(fun (loc, err) ->
-      Buffer.add_string buf "Error at line ";
-      Loc.show loc |> Buffer.add_string buf;
-      Buffer.add_string buf ":\n";
-      Parse_error.PP.error err |> Buffer.add_string buf;
-      Buffer.add_char buf '\n');
+  List.iter errors ~f:(function
+    | Loc.{ source = _; start = { line = sl; column = sc }; _end = { line = el; column = ec } }, err
+      when sl = el ->
+      bprintf buf "Line %d (%d-%d): %s\n" sl sc ec (Parse_error.PP.error err)
+    | Loc.{ source = _; start = { line = sl; column = sc }; _end = { line = el; column = ec } }, err ->
+      bprintf buf "Line %d (%d) to line %d (%d): %s\n" sl sc el ec (Parse_error.PP.error err));
   Buffer.contents buf
 
-let parse_error ~filename js_file_errors errors =
+let parse_error ~filename js_file_errors error =
   let open Lwt.Syntax in
-  let message = errors_to_string errors in
-  let+ () = Lwt_io.eprintlf "Parsing error in %s:\n%s" filename message in
+  let message =
+    match error with
+    | First (_ :: _ :: _ as ll) -> sprintf !"Parsing errors in %s:\n%{errors_to_string}" filename ll
+    | First ll -> sprintf !"Parsing error in %s:\n%{errors_to_string}" filename ll
+    | Second msg -> sprintf "%s in %s\n" msg filename
+  in
+  let+ () = Lwt_io.eprintlf "%s------\n" message in
   Queue.enqueue js_file_errors Failed.{ filename; message }
 
 let debug statements =
@@ -489,7 +494,9 @@ let strings_from_js ~filename parsed js_file_errors source =
       (* debug statements; *)
       extract parsed statements;
       Lwt.return_unit)
-  | exception Parse_error.Error (_, (_ :: _ as errors)) -> parse_error ~filename js_file_errors errors
+  | exception Parse_error.Error (_, (_ :: _ as errors)) ->
+    parse_error ~filename js_file_errors (First errors)
+  | exception Parse_error.Error (_, []) -> parse_error ~filename js_file_errors (Second "Syntax error")
   | exception exn ->
     print_endline (sprintf "Unexpected error in %s\nPlease report this bug." filename);
     raise exn
