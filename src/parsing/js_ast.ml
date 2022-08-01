@@ -485,8 +485,10 @@ let strings_from_pug parsed source =
       extract parsed statements)
   | exception _ -> ()
 
+let parse_options = Some { Parser_env.default_parse_options with esproposal_export_star_as = true }
+
 let strings_from_js ~filename parsed js_file_errors source =
-  match Parser_flow.program source with
+  match Parser_flow.program ~parse_options source with
   | _, (_ :: _ as errors) -> failwith (errors_to_string errors)
   | ast, [] -> (
     match ast with
