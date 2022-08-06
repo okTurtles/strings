@@ -28,8 +28,10 @@ depends: [
   "ppx_deriving"
   "ppx_deriving_yojson"
   "ppx_gen_rec"
+  "ppx_blob"
   "sedlex"
   "stdlib-shims"
   "yojson"
+  "uuidm"
   "wtf8"
 ]

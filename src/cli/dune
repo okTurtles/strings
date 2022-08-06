@@ -2,6 +2,7 @@
   (name strings)
   (libraries
     parsing
+    quickjs
     utils
 
     stdlib-shims

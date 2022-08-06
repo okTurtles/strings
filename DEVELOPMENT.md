@@ -2,7 +2,7 @@
 
 ### Setup
 From the root of the repo:
-```bash
+```sh
 opam switch create . ocaml-variants.4.13.1+options --no-install
 opam install . --deps-only -t
 
@@ -14,17 +14,33 @@ git clone --branch v0.183.1 --depth 1 git@github.com:facebook/flow.git flow
 ln -s "$(pwd)/flow/src/parser" src/flow_parser
 ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
 ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
+
+# JS dependencies
+npm install --no-save typescript browserify
+
+# Generate the TS runtime
+npx browserify parser.js -o src/quickjs/runtime.js
+
+# Install QuickJS
+curl https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz > quickjs.tar.xz
+tar xvf quickjs.tar.xz
+mv quickjs-2021-03-27 quickjs
+rm quickjs.tar.xz
 ```
 
 ### MacOS - Build & Run
-```bash
+```sh
+# Don't forget to update the version number in [strings.ml]
+
 DUNE_PROFILE=release dune build src/cli/strings.exe && cp _build/default/src/cli/strings.exe strings.mac && strip strings.mac
 
 ./strings.mac ../group-income-simple/
 ```
 
 ### Docker (Linux) - Build & Run
-```bash
+```sh
+# Don't forget to update the version number in [strings.ml]
+
 docker build . -t strings:latest
 STRINGS_CID="$(docker create strings:latest)"
 docker cp "$STRINGS_CID":/app/strings.exe strings.linux

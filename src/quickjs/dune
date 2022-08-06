@@ -1,0 +1,25 @@
+(library
+  (name quickjs)
+  (libraries
+    core
+    lwt
+    lwt.unix
+    uuidm
+  )
+  (preprocessor_deps (file runtime.js))
+  (preprocess (pps
+    ppx_jane
+    ppx_blob
+  ))
+  (foreign_stubs (language cxx) (names quickjs)
+    (flags -std=c++17 -O3 -Wall -fPIC -I.)
+  )
+  (c_library_flags (-lstdc++))
+  (foreign_archives quickjs)
+)
+
+(rule
+  (targets libquickjs.a)
+  (action (bash "cp %{project_root}/../../quickjs/libquickjs.a libquickjs.a"))
+  (mode promote)
+)
