@@ -1,6 +1,6 @@
-"use strict"
+'use strict'
 
-var { createSourceFile, ScriptTarget, SyntaxKind, forEachChild } = require("typescript")
+var { createSourceFile, ScriptTarget, SyntaxKind, forEachChild } = require('typescript')
 
 globalThis.extract = function (code) {
   var acc = []

@@ -13,8 +13,12 @@ src/prototype
 *.linux
 strings/
 flow/
+quickjs/
 test/
 bad/
 src/flow_parser
 src/sedlex
 src/collections
+src/quickjs/runtime.js
+src/quickjs/libquickjs.a
+src/quickjs/libomp.a

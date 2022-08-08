@@ -1,52 +1,55 @@
-#include <map>
 #include "mlffi.h"
 
-map<string, JSContext*> contexts;
+vector<JSContext*> contexts;
 
 extern "C"
-value stub_init_context(value v_id, value v_script)
+value stub_init_contexts(value v_num_threads, value v_script)
 {
-  CAMLparam2(v_id, v_script);
+  CAMLparam2(v_num_threads, v_script);
   CAMLlocal2(v_ret, v_field);
-  string id(String_val(v_id), caml_string_length(v_id));
+  int num_threads = Int_val(v_num_threads);
   string script(String_val(v_script), caml_string_length(v_script));
 
   caml_enter_blocking_section();
 
-  JSRuntime *rt;
-  JSContext *ctx;
-  JSValue ret_val;
+  contexts.reserve(num_threads);
+  vector<string> errors(num_threads, string(""));
 
-  rt = JS_NewRuntime();
-  if (rt == NULL) {
-    caml_leave_blocking_section();
-    CAMLreturn (v_error_of_cstring(v_ret, v_field, "JS_NewRuntime failure"));
+  #pragma omp parallel for
+  for (int i = 0; i < num_threads; i++) {
+    JSRuntime *rt = JS_NewRuntime();
+    if (rt == NULL) {
+      errors[i] = string("JS_NewRuntime failure");
+    } else {
+      JSContext *ctx = JS_NewContext(rt);
+      if (ctx == NULL) {
+        JS_FreeRuntime(rt);
+        errors[i] = string("JS_NewContext failure");
+      } else {
+        JSValue ret_val = JS_Eval(ctx, script.c_str(), script.length(), "<evalScript>", JS_EVAL_TYPE_GLOBAL);
+
+        if (JS_IsException(ret_val)) {
+          errors[i] = stringify_exn(ctx);
+          JS_FreeValue(ctx, ret_val);
+          JS_FreeContext(ctx);
+          JS_FreeRuntime(rt);
+        } else {
+          JS_FreeValue(ctx, ret_val);
+          contexts[i] = ctx;
+        }
+      }
+    }
   }
-  ctx = JS_NewContext(rt);
-  if (ctx == NULL) {
-      JS_FreeRuntime(rt);
-      caml_leave_blocking_section();
-      CAMLreturn (v_error_of_cstring(v_ret, v_field, "JS_NewContext failure"));
-  }
-
-  ret_val = JS_Eval(ctx, script.c_str(), script.length(), "<evalScript>", JS_EVAL_TYPE_GLOBAL);
-
-  if (JS_IsException(ret_val)) {
-    caml_leave_blocking_section();
-    v_ret = v_error_of_js_exn(v_ret, v_field, ctx);
-    JS_FreeValue(ctx, ret_val);
-    JS_FreeContext(ctx);
-    JS_FreeRuntime(rt);
-    CAMLreturn (v_ret);
-  };
-
-  JS_FreeValue(ctx, ret_val);
-  contexts[id] = ctx;
 
   caml_leave_blocking_section();
 
-  v_ret = v_ok_of_v(v_ret, Val_unit);
-  CAMLreturn (v_ret);
+  for (int i = 0; i < num_threads; i++) {
+    if (errors[i].length() > 0) {
+      CAMLreturn (v_error_of_string(v_ret, v_field, errors[i]));
+    }
+  }
+
+  CAMLreturn (v_ok_of_v(v_ret, Val_unit));
 }
 
 extern "C"
@@ -54,7 +57,7 @@ value stub_extract_ts(value v_id, value v_code)
 {
   CAMLparam2(v_id, v_code);
   CAMLlocal2(v_ret, v_field);
-  string id(String_val(v_id), caml_string_length(v_id));
+  int id = Int_val(v_id);
   string code(String_val(v_code), caml_string_length(v_code));
 
   caml_enter_blocking_section();
@@ -65,15 +68,18 @@ value stub_extract_ts(value v_id, value v_code)
     CAMLreturn (v_error_of_cstring(v_ret, v_field, "Could not find context, please report this bug."));
   }
 
-  ostringstream ss;
-  ss << "extract(\"" << code << "\");";
-  string script(ss.str());
-
-  JSValue ret_val = JS_Eval(ctx, script.c_str(), script.length(), "<evalScript>", JS_EVAL_TYPE_GLOBAL);
+  JSValue code_val = JS_NewStringLen(ctx, code.c_str(), code.length());
+  JSValue global_obj = JS_GetGlobalObject(ctx);
+  JSValue fun = JS_GetPropertyStr(ctx, global_obj, "extract");
+  JSValue ret_val = JS_Call(ctx, fun, JS_NULL, 1, &code_val);
+  JS_FreeValue(ctx, fun);
+  JS_FreeValue(ctx, global_obj);
+  JS_FreeValue(ctx, code_val);
 
   if (JS_IsException(ret_val)) {
     caml_leave_blocking_section();
-    v_ret = v_error_of_js_exn(v_ret, v_field, ctx);
+    string error = stringify_exn(ctx);
+    v_ret = v_error_of_string(v_ret, v_field, error);
     JS_FreeValue(ctx, ret_val);
     CAMLreturn (v_ret);
   };

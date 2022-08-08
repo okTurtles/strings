@@ -1,6 +1,8 @@
 (library
   (name quickjs)
   (libraries
+    utils
+
     core
     lwt
     lwt.unix
@@ -12,14 +14,45 @@
     ppx_blob
   ))
   (foreign_stubs (language cxx) (names quickjs)
-    (flags -std=c++17 -O3 -Wall -fPIC -I.)
+    (flags -std=c++17 -O3 -Wall -fPIC -I.
+      -Xpreprocessor -fopenmp
+    )
   )
   (c_library_flags (-lstdc++))
-  (foreign_archives quickjs)
+  (foreign_archives quickjs omp)
+)
+
+(rule
+  (targets runtime.js)
+  (action (bash "
+    DIR=\"$(pwd)\"
+    cd %{project_root}/../../
+    npx browserify src/quickjs/parser.js > \"$DIR/runtime.js\"
+  "))
+  (mode standard)
+)
+
+(rule
+  (targets quickjs.h)
+  (action (bash "
+    cp %{project_root}/../../quickjs/quickjs.h quickjs.h
+  "))
+  (mode standard)
 )
 
 (rule
   (targets libquickjs.a)
-  (action (bash "cp %{project_root}/../../quickjs/libquickjs.a libquickjs.a"))
-  (mode promote)
+  (action (bash "
+    cp %{project_root}/../../quickjs/libquickjs.lto.a libquickjs.a
+  "))
+  (mode standard)
+)
+
+(rule
+  (targets libomp.a)
+  (action (bash "
+    cp /usr/local/Cellar/libomp/14.0.5/lib/libomp.a libomp.a \
+    || cp /usr/lib/libgomp.a libomp.a
+  "))
+  (mode standard)
 )

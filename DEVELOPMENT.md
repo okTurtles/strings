@@ -18,14 +18,11 @@ ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
 # JS dependencies
 npm install --no-save typescript browserify
 
-# Generate the TS runtime
-npx browserify parser.js -o src/quickjs/runtime.js
-
 # Install QuickJS
 curl https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz > quickjs.tar.xz
-tar xvf quickjs.tar.xz
+tar xvf quickjs.tar.xz && rm quickjs.tar.xz
 mv quickjs-2021-03-27 quickjs
-rm quickjs.tar.xz
+cd quickjs && make && cd -
 ```
 
 ### MacOS - Build & Run

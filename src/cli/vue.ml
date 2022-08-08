@@ -31,7 +31,7 @@ let extract_strings ~filename js_file_errors languages =
         | Css -> Lwt.return_unit)
       languages
   in
-  strings
+  Queue.iter strings
 
 let debug_pug ~filename languages =
   let js_file_errors = Queue.create () in
@@ -43,8 +43,12 @@ let debug_pug ~filename languages =
           Lwt.return_unit
         | Pug nodes as lang ->
           let* () = Lwt_io.printl (Pug.sexp_of_nodes nodes |> Sexp.to_string_hum) in
-          let* strings = extract_strings ~filename js_file_errors [ lang ] in
-          Lwt_io.printl (Queue.to_array strings |> String.concat_array ~sep:"\n"))
+          let* iter = extract_strings ~filename js_file_errors [ lang ] in
+          let buf = Buffer.create 256 in
+          iter ~f:(fun s ->
+              Buffer.add_string buf s;
+              Buffer.add_char buf '\n');
+          Lwt_io.printl (Buffer.contents buf))
       languages
   in
   Lwt_io.printl

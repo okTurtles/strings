@@ -2,9 +2,10 @@
 #define MLFFI_H
 
 #include <string>
+#include <vector>
 #include <sstream>
 
-#include "../../../quickjs/quickjs.h"
+#include "quickjs.h"
 
 #include <caml/memory.h>
 #include <caml/alloc.h>
@@ -41,31 +42,39 @@ value v_error_of_string(value v_ret, value v_field, string &error)
   CAMLreturn (v_ret);
 }
 
-string stringify(JSContext *ctx, JSValue &js) {
-  const char *str = JS_ToCString(ctx, js);
-  string ret(str);
-  JS_FreeCString(ctx, str);
-  return ret;
+string stringify_prop(JSContext *ctx, JSValue &js, const char *prop_name) {
+  JSValue prop = JS_GetPropertyStr(ctx, js, prop_name);
+  if (!JS_IsUndefined(prop)) {
+    size_t len;
+    const char *str = JS_ToCStringLen(ctx, &len, prop);
+    if (str == nullptr) {
+      return string("<null>");
+    } else {
+      string ret(str, len);
+      JS_FreeCString(ctx, str);
+      return ret;
+    }
+  }
+  return string("<undefined>");
 }
 
-value v_error_of_js_exn (value v_ret, value v_field, JSContext *ctx)
-{
-  CAMLparam2(v_ret, v_field);
+string stringify_exn(JSContext *ctx) {
   JSValue exception_val = JS_GetException(ctx);
   ostringstream ss;
 
-  ss << stringify(ctx, exception_val);
-  JSValue stack = JS_GetPropertyStr(ctx, exception_val, "stack");
-  if (!JS_IsUndefined(stack)) {
-    ss << "\n" << stringify(ctx, stack);
+  if (JS_IsError(ctx, exception_val)) {
+    ss << stringify_prop(ctx, exception_val, "message");
+    ss << stringify_prop(ctx, exception_val, "stack");
+  } else {
+    size_t len;
+    const char *str = JS_ToCStringLen(ctx, &len, exception_val);
+    ss << string(str, len);
+    JS_FreeCString(ctx, str);
   }
 
-  JS_FreeValue(ctx, stack);
   JS_FreeValue(ctx, exception_val);
-
-  string error(ss.str());
-  v_ret = v_error_of_string (v_ret, v_field, error);
-  CAMLreturn (v_ret);
+  return ss.str();
 }
+
 
 #endif

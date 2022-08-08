@@ -3,11 +3,9 @@
 _opam/
 _build/
 node_modules/
-runtime.js
 quickjs/
 !src/quickjs/
 **/.merlin
-vue/
 src/flow_parser
 src/prototype
 *.strings
