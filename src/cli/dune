@@ -17,4 +17,5 @@
     ppx_deriving_yojson
   ))
   (modes exe)
+  (link_flags (:include link_flags.%{system}.dune))
 )

@@ -47,10 +47,16 @@ Place it at the root of the repository.
 
 Simply run it before submitting a Pull Request!
 ```sh
-./strings.mac frontend
+# MacOS
+./strings.mac src/
+
+# Linux
+tar xzvf strings.linux.tar.gz # unzip
+./strings.linux src/
 ```
 - **MacOS**: Monterey or newer
 - **Linux** and **WSL**
   - Ubuntu 20.04 or newer
   - Debian 11 (Bullseye) or newer
   - You'll need to install your Linux distribution's `musl` package: `apt-get install musl`
+  - Make sure the `lib` directory stays in the same directory as `strings.linux`

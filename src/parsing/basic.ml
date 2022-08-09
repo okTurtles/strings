@@ -12,6 +12,14 @@ let alphanum = function
   true
 | _ -> false
 
+let is_identifier = function
+| 'a' .. 'z'
+ |'A' .. 'Z'
+ |'0' .. '9'
+ |'_' ->
+  true
+| _ -> false
+
 let is_ws = function
 | '\x20'
  |'\x0d'

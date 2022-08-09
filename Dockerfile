@@ -2,7 +2,7 @@ FROM asemio/mountain-caravan:2.0.0
 WORKDIR /app
 RUN sudo apk update \
   && sudo apk upgrade \
-  && sudo apk add --no-cache perl cmake npm xz
+  && sudo apk add --no-cache perl cmake npm xz patchelf
 
 COPY strings.opam .
 
@@ -36,4 +36,7 @@ RUN echo '=== Building ===' \
   && opam exec -- dune build src/cli/strings.exe \
   && cp /app/_build/default/src/cli/strings.exe . \
   && chmod 755 strings.exe \
-  && strip strings.exe
+  && strip strings.exe \
+  && mkdir lib \
+  && ldd strings.exe | awk '$2 == "=>" && $3 !~ /ld-musl/ {print $1, $3}' | sort | uniq | awk '{print $2}' | xargs -n1 -I{} -- cp {} lib/ \
+  && patchelf --set-rpath '$ORIGIN/lib' strings.exe

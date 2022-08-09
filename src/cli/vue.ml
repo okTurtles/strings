@@ -3,8 +3,8 @@ open Lwt.Syntax
 open Parsing
 
 type language =
-  | Pug of Pug.nodes
-  | Js  of Js.raw
+  | Pug    of Pug.nodes
+  | Script of Script.raw
   | Css
 [@@deriving sexp, yojson]
 
@@ -27,7 +27,10 @@ let extract_strings ~filename js_file_errors languages =
         | Pug nodes ->
           Array.iter nodes ~f:(loop_pug strings);
           Lwt.return_unit
-        | Js source -> Js_ast.strings_from_js ~filename strings js_file_errors source
+        | Script (Script.JS source) -> Js_ast.strings_from_js ~filename strings js_file_errors source
+        | Script (Script.TS source) ->
+          let+ parsed = Quickjs.extract_ts source in
+          Array.iter parsed ~f:(Queue.enqueue strings)
         | Css -> Lwt.return_unit)
       languages
   in
@@ -38,9 +41,9 @@ let debug_pug ~filename languages =
   let* () =
     Lwt_list.iter_s
       (function
-        | Js _
-         |Css ->
-          Lwt.return_unit
+        | Script (JS source) -> Lwt_io.printlf "<JS Code - %d bytes>" (String.length source)
+        | Script (TS source) -> Lwt_io.printlf "<TS Code - %d bytes>" (String.length source)
+        | Css -> Lwt_io.printl "<CSS Code>"
         | Pug nodes as lang ->
           let* () = Lwt_io.printl (Pug.sexp_of_nodes nodes |> Sexp.to_string_hum) in
           let* iter = extract_strings ~filename js_file_errors [ lang ] in
@@ -58,10 +61,13 @@ let parse ~filename ic ~f =
   let open Angstrom in
   let open Lwt.Syntax in
   let open Basic in
+  let buf = Buffer.create 256 in
   let languages =
     choice
       [
-        (Pug.parser >>| fun x -> Pug x); (Js.parser () >>| fun x -> Js x); (Css.parser >>| fun () -> Css);
+        (Pug.parser >>| fun x -> Pug x);
+        (Script.parser buf >>| fun x -> Script x);
+        (Css.parser >>| fun () -> Css);
       ]
   in
   let parser = lift2 Tuple2.create (sep_by mlws1 languages) (mlws *> take_while (fun _ -> true)) in

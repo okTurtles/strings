@@ -3,6 +3,8 @@
 ### Setup
 From the root of the repo:
 ```sh
+brew install opam llvm # llvm for the linker
+
 opam switch create . ocaml-variants.4.13.1+options --no-install
 opam install . --deps-only -t
 
@@ -39,9 +41,13 @@ DUNE_PROFILE=release dune build src/cli/strings.exe && cp _build/default/src/cli
 # Don't forget to update the version number in [strings.ml]
 
 docker build . -t strings:latest
-STRINGS_CID="$(docker create strings:latest)"
-docker cp "$STRINGS_CID":/app/strings.exe strings.linux
-docker rm "$STRINGS_CID"
+
+STRINGS_CID="$(docker create strings:latest)" \
+&& rm -rf strings.linux strings.linux.tar.gz lib \
+&& docker cp "$STRINGS_CID":/app/strings.exe strings.linux \
+&& docker cp "$STRINGS_CID":/app/lib lib \
+&& docker rm "$STRINGS_CID" \
+&& tar czvf strings.linux.tar.gz strings.linux lib
 
 # Trying it on Ubuntu 18.04
 docker run -it --rm \

@@ -12,7 +12,9 @@ src/prototype
 *.exe
 *.mac
 *.linux
+*.tar.gz
 strings/
+lib/
 flow/
 test/
 bad/

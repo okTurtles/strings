@@ -65,7 +65,6 @@ let rec traverse ~root counts strings js_file_errors directory =
           process_file ~root strings counts.ts path ~f:(fun ic ->
               let* source = Lwt_io.read ic in
               let+ parsed = Quickjs.extract_ts source in
-              print_endline (sprintf !">> %{sexp: string array}" parsed);
               Array.iter parsed)
         | { st_kind = S_DIR; _ } -> traverse ~root counts strings js_file_errors path
         | _ -> Lwt.return_unit))
