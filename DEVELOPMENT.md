@@ -31,7 +31,7 @@ cd quickjs && make && cd -
 ```sh
 # Don't forget to update the version number in [strings.ml]
 
-DUNE_PROFILE=release dune build src/cli/strings.exe && cp _build/default/src/cli/strings.exe strings.mac && strip strings.mac
+DUNE_PROFILE=release rm strings.mac && dune build src/cli/strings.exe && cp _build/default/src/cli/strings.exe strings.mac && strip strings.mac
 
 ./strings.mac ../group-income-simple/
 ```

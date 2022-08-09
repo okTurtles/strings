@@ -2,11 +2,9 @@ open Core
 open Lwt.Infix
 open Lwt.Syntax
 
-external stub_init_contexts : int -> string -> (unit, string) Result.t = "stub_init_contexts"
+external stub_init_contexts : int -> (unit, string) Result.t = "stub_init_contexts"
 
 external stub_extract_ts : int -> string -> (string array, string) Result.t = "stub_extract_ts"
-
-let init_code = [%blob "runtime.js"]
 
 let num_threads = 4
 
@@ -15,7 +13,7 @@ let init_time = ref Int63.zero
 let init_contexts =
   lazy
     (let time = Utils.time () in
-     Lwt_preemptive.detach (fun () -> stub_init_contexts num_threads init_code) () >>= function
+     Lwt_preemptive.detach (fun () -> stub_init_contexts num_threads) () >>= function
      | Ok () ->
        let time = time () in
        init_time := time;

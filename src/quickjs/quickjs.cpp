@@ -1,14 +1,15 @@
 #include "mlffi.h"
 
+#include "runtime.h"
+
 vector<JSContext*> contexts;
 
 extern "C"
-value stub_init_contexts(value v_num_threads, value v_script)
+value stub_init_contexts(value v_num_threads)
 {
-  CAMLparam2(v_num_threads, v_script);
+  CAMLparam1(v_num_threads);
   CAMLlocal2(v_ret, v_field);
   int num_threads = Int_val(v_num_threads);
-  string script(String_val(v_script), caml_string_length(v_script));
 
   caml_enter_blocking_section();
 
@@ -26,7 +27,8 @@ value stub_init_contexts(value v_num_threads, value v_script)
         JS_FreeRuntime(rt);
         errors[i] = string("JS_NewContext failure");
       } else {
-        JSValue ret_val = JS_Eval(ctx, script.c_str(), script.length(), "<evalScript>", JS_EVAL_TYPE_GLOBAL);
+        JSValue bc = JS_ReadObject(ctx, qjsc_runtime, qjsc_runtime_size, JS_READ_OBJ_BYTECODE);
+        JSValue ret_val = JS_EvalFunction(ctx, bc);
 
         if (JS_IsException(ret_val)) {
           errors[i] = stringify_exn(ctx);
@@ -67,6 +69,7 @@ value stub_extract_ts(value v_id, value v_code)
     caml_leave_blocking_section();
     CAMLreturn (v_error_of_cstring(v_ret, v_field, "Could not find context, please report this bug."));
   }
+  JS_UpdateStackTop(JS_GetRuntime(ctx));
 
   JSValue code_val = JS_NewStringLen(ctx, code.c_str(), code.length());
   JSValue global_obj = JS_GetGlobalObject(ctx);

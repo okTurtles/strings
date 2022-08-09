@@ -8,10 +8,8 @@
     lwt.unix
     uuidm
   )
-  (preprocessor_deps (file runtime.js))
   (preprocess (pps
     ppx_jane
-    ppx_blob
   ))
   (foreign_stubs (language cxx) (names quickjs)
     (flags -std=c++17 -O3 -Wall -fPIC -I.
@@ -31,7 +29,14 @@
   "))
   (mode standard)
 )
-
+(rule
+  (targets runtime.h)
+  (deps runtime.js)
+  (action (bash "
+    %{project_root}/../../quickjs/qjsc -c -o runtime.h runtime.js
+  "))
+  (mode standard)
+)
 (rule
   (targets quickjs.h)
   (action (bash "
@@ -39,7 +44,6 @@
   "))
   (mode standard)
 )
-
 (rule
   (targets libquickjs.a)
   (action (bash "
@@ -47,7 +51,6 @@
   "))
   (mode standard)
 )
-
 (rule
   (targets libomp.a)
   (action (bash "
