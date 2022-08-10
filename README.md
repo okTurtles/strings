@@ -49,6 +49,8 @@ Simply run it before submitting a Pull Request!
 ```sh
 # MacOS
 ./strings.mac src/
+# getting a 'code cannot be verified' error? Run this:
+# xattr -d com.apple.quarantine strings.mac
 
 # Linux
 tar xzvf strings.linux.tar.gz # unzip
