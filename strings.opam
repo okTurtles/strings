@@ -9,9 +9,9 @@ description: """
 """
 license: "MPL-2.0"
 tags: []
-homepage: "https://github.com/SGrondin/strings"
-doc: "https://github.com/SGrondin/strings"
-bug-reports: "https://github.com/SGrondin/strings/issues"
+homepage: "https://github.com/okTurtles/strings"
+doc: "https://github.com/okTurtles/strings"
+bug-reports: "https://github.com/okTurtles/strings/issues"
 depends: [
   "ocaml" { = "4.13.1" }
   "ocaml-option-flambda"
@@ -28,7 +28,6 @@ depends: [
   "ppx_deriving"
   "ppx_deriving_yojson"
   "ppx_gen_rec"
-  "ppx_blob"
   "sedlex"
   "stdlib-shims"
   "yojson"
