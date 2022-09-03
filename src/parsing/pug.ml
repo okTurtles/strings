@@ -143,8 +143,4 @@ let parser =
   in
   let lines : lines t = sep_by1 (many1 end_of_line) line in
 
-  let pug_begin =
-    string {s|<template lang="pug">|s} <|> string {s|<template lang='pug'>|s} <* blank <* many end_of_line
-  in
-  let pug_end = string {s|</template>|s} in
-  pug_begin *> (lines >>| rollup) <* mlblank <* pug_end
+  blank *> many end_of_line *> (lines >>| rollup) <* mlblank <* end_of_input

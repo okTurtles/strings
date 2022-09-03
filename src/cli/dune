@@ -8,6 +8,8 @@
     stdlib-shims
     angstrom-lwt-unix
     core
+    core_unix
+    core_unix.command_unix
     lwt
     lwt.unix
     ppx_deriving_yojson.runtime

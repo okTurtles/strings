@@ -2,11 +2,11 @@
   (name parsing)
   (libraries
     core
-
-    flow_parser
-
     angstrom-lwt-unix
     lwt
+    SZXX
+
+    flow_parser
   )
   (preprocess (pps
     ppx_jane

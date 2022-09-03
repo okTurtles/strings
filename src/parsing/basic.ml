@@ -75,3 +75,44 @@ let escapable_string_parser ~escape ~separator =
   in
   loop false)
   <?> "Escapable string"
+
+let boundary_parsers tag =
+  let sq_string = escapable_string_parser ~escape:'\\' ~separator:'\'' in
+  let dq_string = escapable_string_parser ~escape:'\\' ~separator:'"' in
+  let quoted_string =
+    peek_char >>= function
+    | Some '\'' -> sq_string
+    | Some '"' -> dq_string
+    | Some _ -> fail "Not a string"
+    | None -> sq_string <|> dq_string
+  in
+  let attribute =
+    lift2 Tuple2.create
+      (mlws *> take_while1 is_identifier)
+      (mlws *> maybe (char '=' *> mlws *> quoted_string))
+  in
+  let starts = char '<' *> mlws *> string tag *> many attribute <* mlws <* char '>' in
+  let ends = string "</" *> mlws *> string tag <* mlws <* char '>' in
+  starts, ends
+
+let block_parser (starts, ends) buf ~f =
+  let line =
+    take_remaining <* advance 1 >>| fun src_line ->
+    Buffer.add_string buf src_line;
+    Buffer.add_char buf '\n'
+  in
+  starts
+  >>| (fun x ->
+        Buffer.clear buf;
+        x)
+  <* many_till line ends
+  >>| fun x -> f (Buffer.contents buf) x
+
+let exec_parser parser ~filename ~language_name raw =
+  let result = Angstrom.parse_string ~consume:All parser raw in
+  match result with
+  | Ok parsed -> parsed
+  | Error err ->
+    failwithf
+      "The file [%s] contains invalid syntax or %s features unsupported by this tool.\n\
+       Please report this so it can be improved. Error: %s" filename language_name err ()

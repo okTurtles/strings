@@ -24,6 +24,7 @@ depends: [
   "angstrom"
   "angstrom-lwt-unix"
   "core" { >= "v0.15.0" }
+  "core_unix" { >= "v0.15.0" }
   "lwt"
   "ppx_deriving"
   "ppx_deriving_yojson"
@@ -33,4 +34,5 @@ depends: [
   "yojson"
   "uuidm"
   "wtf8"
+  "SZXX" { >= "2.3.0" }
 ]

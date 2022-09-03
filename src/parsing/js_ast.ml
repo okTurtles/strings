@@ -475,7 +475,7 @@ let debug statements =
     |> String.concat ~sep:", ")
   |> print_endline
 
-let strings_from_pug parsed source =
+let strings_from_template parsed source =
   match Parser_flow.program source with
   | _, _ :: _ -> ()
   | ast, [] -> (

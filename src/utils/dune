@@ -2,7 +2,7 @@
   (name utils)
   (libraries
     core
-    unix
+    core_unix
     lwt
     lwt.unix
   )
