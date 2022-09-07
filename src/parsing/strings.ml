@@ -4,19 +4,16 @@ type line =
   | Translation of (string * string)
   | Comment
 
-let parse ~filename ic =
+let parser =
   let open Angstrom in
-  let open Lwt.Syntax in
   let open Basic in
   let double_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'"' in
-
   let line =
     lift2
       (fun x y -> Translation (x, y))
       (mlws *> double_quoted_string <* mlws <* char '=')
       (mlws *> double_quoted_string <* mlws <* char ';' <* mlws)
   in
-
   let comment =
     (mlws
     *> string "/*"
@@ -30,20 +27,14 @@ let parse ~filename ic =
     loop 0)
     <* mlws
   in
+  many (line <|> comment) <* mlws
 
-  let parser = lift2 Tuple2.create (many (line <|> comment)) (mlws *> take_while (fun _ -> true)) in
-
+let parse ~filename ic =
+  let open Lwt.Syntax in
   let table = String.Table.create () in
 
-  let+ _unconsumed, result = Angstrom_lwt_unix.parse parser ic in
-  match result with
-  | Ok (lines, "") ->
-    List.iter lines ~f:(function
-      | Translation (x, y) -> String.Table.set table ~key:x ~data:y
-      | Comment -> ());
-    table
-  | Ok (_, unparsed) ->
-    failwithf
+  let error_message ~filename ~language_name:_ ~unparsed =
+    sprintf
       "There is a syntax error in file [%s].\n\
        Translations must follow this format and end in a semicolon: \"english text\" = \"translated \
        text\";\n\
@@ -51,5 +42,10 @@ let parse ~filename ic =
        %s"
       filename
       (String.take_while ~f:(Char.( <> ) '\n') unparsed)
-      ()
-  | Error err -> failwithf "Syntax Error: %s" err ()
+  in
+
+  let+ lines = Basic.exec_parser_lwt ~error_message parser ~filename ~language_name:".strings" ic in
+  List.iter lines ~f:(function
+    | Translation (x, y) -> String.Table.set table ~key:x ~data:y
+    | Comment -> ());
+  table

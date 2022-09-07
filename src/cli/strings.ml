@@ -26,6 +26,8 @@ let write_flags = Core_unix.[ O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT ]
 
 type counts = {
   vue: int ref;
+  pug: int ref;
+  html: int ref;
   js: int ref;
   ts: int ref;
 }
@@ -40,33 +42,54 @@ let process_file ~root strings count filename ~f:get_iter =
             | None -> String.Set.add String.Set.empty data
             | Some set -> String.Set.add set data)))
 
-let rec traverse ~root counts strings js_file_errors directory =
+let rec traverse ~root counts strings js_file_errors template_script directory =
   let* entries =
     Lwt_pool.use pool (fun () -> Lwt_unix.files_of_directory directory |> Lwt_stream.to_list)
   in
   Lwt_list.iter_p
     (function
-      | filename when String.is_prefix ~prefix:"." filename || String.( = ) filename "node_modules" ->
-        Lwt.return_unit
+      | "node_modules" -> Lwt.return_unit
+      | filename when String.is_prefix ~prefix:"." filename -> Lwt.return_unit
       | filename -> (
         let path = sprintf "%s/%s" directory filename in
-        Lwt_unix.lstat path >>= function
-        | { st_kind = S_REG; _ } when String.is_suffix ~suffix:".vue" filename ->
-          process_file ~root strings counts.vue path ~f:(fun ic ->
-              let* languages = Vue.parse ~filename ic in
-              Vue.extract_strings ~filename js_file_errors languages JS)
-        | { st_kind = S_REG; _ } when String.is_suffix ~suffix:".js" filename ->
+        Lwt_unix.lstat path >>= fun stat ->
+        match stat, lazy (String.slice filename (-4) 0), lazy (String.slice filename (-3) 0) with
+        | { st_kind = S_REG; _ }, _, (lazy ".js") when String.is_suffix ~suffix:".js" filename ->
           process_file ~root strings counts.js path ~f:(fun ic ->
               let* source = Lwt_io.read ic in
               let parsed = Queue.create () in
               let+ () = Parsing.Js_ast.strings_from_js ~filename:path parsed js_file_errors source in
               Queue.iter parsed)
-        | { st_kind = S_REG; _ } when String.is_suffix ~suffix:".ts" filename ->
+        | { st_kind = S_REG; _ }, _, (lazy ".ts") ->
           process_file ~root strings counts.ts path ~f:(fun ic ->
               let* source = Lwt_io.read ic in
               let+ parsed = Quickjs.extract_ts source in
               Array.iter parsed)
-        | { st_kind = S_DIR; _ } -> traverse ~root counts strings js_file_errors path
+        | { st_kind = S_REG; _ }, (lazy ".vue"), _ ->
+          process_file ~root strings counts.vue path ~f:(fun ic ->
+              let* languages = Vue.parse ~filename ic in
+              Vue.extract_strings ~filename js_file_errors template_script languages)
+        | { st_kind = S_REG; _ }, (lazy ".pug"), _ ->
+          process_file ~root strings counts.pug path ~f:(fun ic ->
+              let* nodes =
+                Parsing.Basic.exec_parser_lwt Parsing.Pug.parser ~filename ~language_name:"Pug" ic
+              in
+              let parsed = Queue.create () in
+              let+ () = Vue.collect_pug parsed template_script nodes in
+              Queue.iter parsed)
+        | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".html" ->
+          process_file ~root strings counts.html path ~f:(fun ic ->
+              let* nodes =
+                Parsing.Basic.exec_parser_lwt Parsing.Html.parser ~filename ~language_name:"HTML" ic
+              in
+              let parsed = Queue.create () in
+              let+ () =
+                Parsing.Html.finalize ~filename nodes
+                |> Option.value_map ~default:Lwt.return_unit ~f:(Vue.collect_html parsed template_script)
+              in
+              Queue.iter parsed)
+        | { st_kind = S_DIR; _ }, _, _ ->
+          traverse ~root counts strings js_file_errors template_script path
         | _ -> Lwt.return_unit))
     entries
 
@@ -196,10 +219,24 @@ let main { targets; template_script } = function
 | Debug lang ->
   Lwt_list.iter_s
     (fun filename ->
-      let* () = Lwt_io.printlf "Debugging %s" filename in
+      let* () = Lwt_io.printlf "Debugging [%s]" filename in
       Lwt_io.with_file ~flags:read_flags ~mode:Input filename (fun ic ->
-          let* languages = Vue.parse ~filename ic in
-          Vue.debug_template ~filename languages lang template_script))
+          match lang, String.slice filename (-4) 0 with
+          | _, ".vue" ->
+            let* languages = Vue.parse ~filename ic in
+            Vue.debug_template ~filename languages template_script lang
+          | Pug, ".pug" ->
+            let* nodes =
+              Parsing.Basic.exec_parser_lwt Parsing.Pug.parser ~filename ~language_name:"Pug" ic
+            in
+            Vue.debug_template ~filename [ Pug { nodes; length = None } ] template_script lang
+          | Html, _ when String.is_suffix filename ~suffix:".html" ->
+            let* top =
+              Parsing.Basic.exec_parser_lwt Parsing.Html.parser ~filename ~language_name:"Pug" ic
+              >|= Parsing.Html.finalize ~filename
+            in
+            Vue.debug_template ~filename [ Html { top; length = None } ] template_script lang
+          | _ -> Lwt_io.printlf "Nothing to do for file [%s]" filename))
     targets
 | Run ->
   let overall_time = Utils.time () in
@@ -220,13 +257,13 @@ let main { targets; template_script } = function
   let js_file_errors = Queue.create () in
   let* english =
     let english_list = String.Table.create () in
-    let counts = { vue = ref 0; js = ref 0; ts = ref 0 } in
+    let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0 } in
     let time = Utils.time () in
     let* () =
       Lwt_list.iter_p
         (fun directory ->
           let root = String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory in
-          traverse ~root:(sprintf "%s/" root) counts english_list js_file_errors root)
+          traverse ~root:(sprintf "%s/" root) counts english_list js_file_errors template_script root)
         targets
     in
     let english =
@@ -237,8 +274,9 @@ let main { targets; template_script } = function
       let f ext i = sprintf "%d %s file%s" i ext (plural i) in
       let time = Int63.(time () - !Quickjs.init_time) in
       Lwt_io.printlf
-        !"✅ [%{Int63}ms] Processed %s, %s, and %s"
-        time (f ".vue" !(counts.vue)) (f ".js" !(counts.js)) (f ".ts" !(counts.ts))
+        !"✅ [%{Int63}ms] Processed %s, %s, %s, %s, and %s"
+        time (f ".js" !(counts.js)) (f ".ts" !(counts.ts)) (f ".html" !(counts.html))
+        (f ".vue" !(counts.vue)) (f ".pug" !(counts.pug))
     in
     let+ () = write_english english in
     english
