@@ -2,9 +2,23 @@ open Core
 open Lwt.Infix
 open Lwt.Syntax
 
+type pug_response = {
+  strings: string array;
+  possible_js: string array;
+}
+
+type _ kind =
+  | Typescript : string array kind
+  | Pug : pug_response kind
+
+let fn_name_of_kind (type a) : a kind -> string = function
+| Typescript -> "extractFromTypeScript"
+| Pug -> "extractFromPug"
+
 external stub_init_contexts : int -> (unit, string) Result.t = "stub_init_contexts"
 
-external stub_extract_ts : int -> string -> (string array, string) Result.t = "stub_extract_ts"
+external stub_extract : int -> string -> fn_name:string -> (string array * string array, string) Result.t
+  = "stub_extract"
 
 let num_threads = 4
 
@@ -27,7 +41,14 @@ let js_contexts =
       incr ctr;
       Lwt.return i)
 
-let extract_ts code =
+let extract (type a) code (kind : a kind) : a Lwt.t =
   let* () = force init_contexts in
-  Lwt_pool.use js_contexts (fun id -> Lwt_preemptive.detach (fun () -> stub_extract_ts id code) ())
-  >|= Result.ok_or_failwith
+  let fn_name = fn_name_of_kind kind in
+  Lwt_pool.use js_contexts (fun id -> Lwt_preemptive.detach (fun () -> stub_extract id code ~fn_name) ())
+  >|= function
+  | Error msg -> failwith msg
+  | Ok (strings, possible_js) ->
+    (match kind with
+     | Typescript -> strings
+     | Pug -> { strings; possible_js }
+      : a)

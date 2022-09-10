@@ -18,7 +18,7 @@ ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
 ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
 
 # JS dependencies
-npm install --no-save typescript browserify
+npm install --no-save typescript browserify pug-lexer pug-parser pug-walk
 
 # Install QuickJS
 curl https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz > quickjs.tar.xz

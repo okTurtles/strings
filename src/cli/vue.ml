@@ -50,7 +50,7 @@ module Debug = struct
 end
 
 let extract_ts strings source =
-  let+ parsed = Quickjs.extract_ts source in
+  let+ parsed = Quickjs.extract source Typescript in
   Array.iter parsed ~f:(Queue.enqueue strings)
 
 let extract_template strings template_script possible_code =

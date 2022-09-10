@@ -54,13 +54,41 @@ value stub_init_contexts(value v_num_threads)
   CAMLreturn (v_ok_of_v(v_ret, Val_unit));
 }
 
+value convert_string_array(JSContext *ctx, JSValue jspair, int index, value v_ret, value v_field) {
+  CAMLparam2(v_ret, v_field);
+  JSValue jsarray = JS_GetPropertyUint32(ctx, jspair, index);
+  JSValue prop_len = JS_GetPropertyStr(ctx, jsarray, "length");
+  int64_t len;
+  if (JS_ToInt64(ctx, &len, prop_len)) {
+    JS_FreeValue(ctx, prop_len);
+    JS_FreeValue(ctx, jsarray);
+    CAMLreturn (v_error_of_cstring(v_ret, v_field, "Could not get results length, please report this bug."));
+  }
+
+  v_field = caml_alloc(len, 0);
+  for (int i = 0; i < len; i++) {
+    JSValue prop_str = JS_GetPropertyUint32(ctx, jsarray, i);
+    size_t str_len;
+    const char* str = JS_ToCStringLen(ctx, &str_len, prop_str);
+    Store_field(v_field, i, caml_alloc_initialized_string(str_len, str));
+    JS_FreeCString(ctx, str);
+    JS_FreeValue(ctx, prop_str);
+  }
+
+  JS_FreeValue(ctx, prop_len);
+  JS_FreeValue(ctx, jsarray);
+
+  CAMLreturn (v_ok_of_v(v_ret, v_field));
+}
+
 extern "C"
-value stub_extract_ts(value v_id, value v_code)
+value stub_extract(value v_id, value v_code, value v_fn_name)
 {
-  CAMLparam2(v_id, v_code);
-  CAMLlocal2(v_ret, v_field);
+  CAMLparam3(v_id, v_code, v_fn_name);
+  CAMLlocal4(v_ret, v_field, v_arr1, v_arr2);
   int id = Int_val(v_id);
   string code(String_val(v_code), caml_string_length(v_code));
+  string fn_name(String_val(v_fn_name), caml_string_length(v_fn_name));
 
   caml_enter_blocking_section();
 
@@ -73,7 +101,7 @@ value stub_extract_ts(value v_id, value v_code)
 
   JSValue code_val = JS_NewStringLen(ctx, code.c_str(), code.length());
   JSValue global_obj = JS_GetGlobalObject(ctx);
-  JSValue fun = JS_GetPropertyStr(ctx, global_obj, "extract");
+  JSValue fun = JS_GetPropertyStr(ctx, global_obj, fn_name.c_str());
   JSValue ret_val = JS_Call(ctx, fun, JS_NULL, 1, &code_val);
   JS_FreeValue(ctx, fun);
   JS_FreeValue(ctx, global_obj);
@@ -87,29 +115,27 @@ value stub_extract_ts(value v_id, value v_code)
     CAMLreturn (v_ret);
   };
 
-  JSValue prop_len = JS_GetPropertyStr(ctx, ret_val, "length");
-  int64_t len;
-  if (JS_ToInt64(ctx, &len, prop_len)) {
-    JS_FreeValue(ctx, prop_len);
-    JS_FreeValue(ctx, ret_val);
-    caml_leave_blocking_section();
-    CAMLreturn (v_error_of_cstring(v_ret, v_field, "Could not get TS results length, please report this bug."));
-  }
-  JS_FreeValue(ctx, prop_len);
-
   caml_leave_blocking_section();
 
-  v_field = caml_alloc(len, 0);
-  for (int i = 0; i < len; i++) {
-    JSValue prop_str = JS_GetPropertyUint32(ctx, ret_val, i);
-    size_t str_len;
-    const char* str = JS_ToCStringLen(ctx, &str_len, prop_str);
-    Store_field(v_field, i, caml_alloc_initialized_string(str_len, str));
-    JS_FreeCString(ctx, str);
-    JS_FreeValue(ctx, prop_str);
+  v_arr1 = convert_string_array(ctx, ret_val, 0, v_ret, v_field);
+  v_arr2 = convert_string_array(ctx, ret_val, 1, v_ret, v_field);
+  if (Tag_val(v_arr1) == 0 && Tag_val(v_arr2) == 0) {
+    // Ok, Ok
+    // Tuple2
+    v_field = caml_alloc_small(2, 0);
+    Field(v_field, 0) = Field(v_arr1, 0);
+    Field(v_field, 1) = Field(v_arr2, 0);
+    v_ret = v_ok_of_v(v_ret, v_field);
+
+  } else if (Tag_val(v_arr1) == 1) {
+    // Error, _
+    v_ret = v_arr1;
+  } else if (Tag_val(v_arr2) == 1) {
+    // Ok, Error
+    v_ret = v_arr2;
   }
 
   JS_FreeValue(ctx, ret_val);
 
-  CAMLreturn (v_ok_of_v(v_ret, v_field));
+  CAMLreturn (v_ret);
 }

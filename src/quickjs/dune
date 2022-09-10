@@ -22,10 +22,11 @@
 
 (rule
   (targets runtime.js)
+  (deps parsers.js)
   (action (bash "
     DIR=\"$(pwd)\"
     cd %{project_root}/../../
-    npx browserify src/quickjs/parser.js > \"$DIR/runtime.js\"
+    npx browserify src/quickjs/parsers.js > \"$DIR/runtime.js\"
   "))
   (mode standard)
 )

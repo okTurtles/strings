@@ -63,7 +63,7 @@ let rec traverse ~root counts strings js_file_errors template_script directory =
         | { st_kind = S_REG; _ }, _, (lazy ".ts") ->
           process_file ~root strings counts.ts path ~f:(fun ic ->
               let* source = Lwt_io.read ic in
-              let+ parsed = Quickjs.extract_ts source in
+              let+ parsed = Quickjs.extract source Typescript in
               Array.iter parsed)
         | { st_kind = S_REG; _ }, (lazy ".vue"), _ ->
           process_file ~root strings counts.vue path ~f:(fun ic ->
