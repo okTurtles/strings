@@ -1,8 +1,7 @@
 open! Core
 open Flow_ast
-open Utils
 
-let extract strings stmts =
+let extract ~on_string stmts =
   let rec extract_expr_or_spread = function
     | Expression.Expression expr -> extract_expression expr
     | Expression.Spread (_, { argument; comments = _ }) -> extract_expression argument
@@ -166,7 +165,7 @@ let extract strings stmts =
           } ) ->
       List.iter arguments ~f:(function
         | Expression.Expression (_, Expression.Literal { value = String s; raw = _; comments = _ }) ->
-          Queue.enqueue strings s
+          on_string s
         | Expression.Expression _
          |Expression.Spread _ ->
           ());
@@ -447,59 +446,3 @@ let extract strings stmts =
   in
 
   List.iter stmts ~f:extract_statement
-
-let errors_to_string errors =
-  let buf = Buffer.create 128 in
-  List.iter errors ~f:(function
-    | Loc.{ source = _; start = { line = sl; column = sc }; _end = { line = el; column = ec } }, err
-      when sl = el ->
-      bprintf buf "Line %d (%d-%d): %s\n" sl sc ec (Parse_error.PP.error err)
-    | Loc.{ source = _; start = { line = sl; column = sc }; _end = { line = el; column = ec } }, err ->
-      bprintf buf "Line %d (%d) to line %d (%d): %s\n" sl sc el ec (Parse_error.PP.error err));
-  Buffer.contents buf
-
-let parse_error ~filename js_file_errors error =
-  let open Lwt.Syntax in
-  let message =
-    match error with
-    | First (_ :: _ :: _ as ll) -> sprintf !"Parsing errors in %s:\n%{errors_to_string}" filename ll
-    | First ll -> sprintf !"Parsing error in %s:\n%{errors_to_string}" filename ll
-    | Second msg -> sprintf "%s in %s\n" msg filename
-  in
-  let+ () = Lwt_io.eprintlf "%s------\n" message in
-  Queue.enqueue js_file_errors Failed.{ filename; message }
-
-let debug statements =
-  sprintf "Statements: %s"
-    (List.map statements ~f:(fun stmt ->
-         Format.asprintf "%a" (Statement.pp (fun _ _ -> ()) (fun _ _ -> ())) stmt)
-    |> String.concat ~sep:", ")
-  |> print_endline
-
-let strings_from_template parsed source =
-  match Parser_flow.program source with
-  | _, _ :: _ -> ()
-  | ast, [] -> (
-    match ast with
-    | _, Program.{ statements; comments = _; all_comments = _ } ->
-      (* debug statements; *)
-      extract parsed statements)
-  | exception _ -> ()
-
-let parse_options = Some { Parser_env.default_parse_options with esproposal_export_star_as = true }
-
-let strings_from_js ~filename parsed js_file_errors source =
-  match Parser_flow.program ~parse_options source with
-  | _, (_ :: _ as errors) -> failwith (errors_to_string errors)
-  | ast, [] -> (
-    match ast with
-    | _, Program.{ statements; comments = _; all_comments = _ } ->
-      (* debug statements; *)
-      extract parsed statements;
-      Lwt.return_unit)
-  | exception Parse_error.Error (_, (_ :: _ as errors)) ->
-    parse_error ~filename js_file_errors (First errors)
-  | exception Parse_error.Error (_, []) -> parse_error ~filename js_file_errors (Second "Syntax error")
-  | exception exn ->
-    print_endline (sprintf "Unexpected error in %s\nPlease report this bug." filename);
-    raise exn

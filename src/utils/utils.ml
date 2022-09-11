@@ -1,20 +1,29 @@
 open! Core
 
-module Failed = struct
+module Collector = struct
   type t = {
     filename: string;
-    message: string;
-  }
-
-  let to_string { filename; message } = sprintf "Parsing error in %s:\n%s" filename message
-end
-
-module Parsed = struct
-  type t = {
-    strings: string array;
-    possible_scripts: string array;
+    strings: string Queue.t;
+    possible_scripts: string Queue.t;
+    file_errors: string Queue.t;
   }
   [@@deriving sexp]
+
+  let create ~filename =
+    {
+      filename;
+      strings = Queue.create ();
+      possible_scripts = Queue.create ();
+      file_errors = Queue.create ();
+    }
+
+  let render_errors = function
+  | { file_errors; _ } when Queue.is_empty file_errors -> None
+  | { file_errors; filename; _ } ->
+    let buf = Buffer.create 256 in
+    bprintf buf "\nErrors in %s:\n" filename;
+    Queue.iter file_errors ~f:(bprintf buf "- %s\n");
+    Some (Buffer.contents buf)
 end
 
 module Exception = struct

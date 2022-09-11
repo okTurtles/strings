@@ -1,19 +1,19 @@
 open! Core
 
-type identifier = { parts: string list } [@@deriving yojson, sexp]
+type identifier = { parts: string list } [@@deriving yojson, sexp_of]
 
 type selector =
   | Element of identifier
   | Class   of identifier
   | Id      of identifier
-[@@deriving yojson, sexp]
+[@@deriving yojson, sexp_of]
 
 type argument = {
   prefix: string option;
   identifier: identifier;
   contents: string option;
 }
-[@@deriving yojson, sexp]
+[@@deriving yojson, sexp_of]
 
 type node = {
   selector: selector;
@@ -21,17 +21,30 @@ type node = {
   text: string option;
   children: node array;
 }
-[@@deriving yojson, sexp]
+[@@deriving yojson, sexp_of]
 
 type line =
   | Node    of node
   | Text    of string list
   | Comment of string list
-[@@deriving yojson, sexp]
+[@@deriving yojson, sexp_of]
 
-type lines = (int * line) list [@@deriving yojson, sexp]
+type lines = (int * line) list [@@deriving yojson, sexp_of]
 
-type t = node array [@@deriving yojson, sexp]
+type t = node array [@@deriving yojson, sexp_of]
+
+let collect Utils.Collector.{ strings; possible_scripts; _ } nodes =
+  let rec loop { selector; arguments; text; children } =
+    (match text, selector with
+    | Some s, Element { parts = "i18n" :: _ } -> Queue.enqueue strings s
+    | Some s, _ -> Queue.enqueue possible_scripts s
+    | None, _ -> ());
+    List.iter arguments ~f:(function
+      | { contents = None; _ } -> ()
+      | { contents = Some s; _ } -> Queue.enqueue possible_scripts s);
+    Array.iter children ~f:loop
+  in
+  Array.iter nodes ~f:loop
 
 let rollup (lines : lines) =
   let rec loop lvl acc_nodes acc_text = function

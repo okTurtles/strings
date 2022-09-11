@@ -2,17 +2,17 @@ open! Core
 open Lwt.Infix
 open Lwt.Syntax
 
-type _ kind =
-  | Typescript : string array kind
-  | Pug : Utils.Parsed.t kind
+type kind =
+  | Typescript
+  | Pug
 
-let fn_name_of_kind (type a) : a kind -> string = function
+let fn_name_of_kind = function
 | Typescript -> "extractFromTypeScript"
 | Pug -> "extractFromPug"
 
 external stub_init_contexts : int -> (unit, string) Result.t = "stub_init_contexts"
 
-external stub_extract : int -> string -> fn_name:string -> (Utils.Parsed.t, string) Result.t
+external stub_extract : int -> string -> fn_name:string -> (string array * string array, string) Result.t
   = "stub_extract"
 
 let num_threads = 4
@@ -36,14 +36,14 @@ let js_contexts =
       incr ctr;
       Lwt.return i)
 
-let extract (type a) code (kind : a kind) : a Lwt.t =
+let extract kind code =
   let* () = force init_contexts in
   let fn_name = fn_name_of_kind kind in
   Lwt_pool.use js_contexts (fun id -> Lwt_preemptive.detach (fun () -> stub_extract id code ~fn_name) ())
-  >|= function
-  | Error msg -> failwith msg
-  | Ok { strings; possible_scripts } ->
-    (match kind with
-     | Typescript -> strings
-     | Pug -> { strings; possible_scripts }
-      : a)
+
+let extract_to_collector (collector : Utils.Collector.t) kind code =
+  extract kind code >|= function
+  | Error msg -> Queue.enqueue collector.file_errors msg
+  | Ok (strings, possible_scripts) ->
+    Array.iter strings ~f:(Queue.enqueue collector.strings);
+    Array.iter possible_scripts ~f:(Queue.enqueue collector.possible_scripts)

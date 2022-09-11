@@ -12,25 +12,25 @@ end
 
 module Language = struct
   type t =
-    | Js   of string
-    | Ts   of string
-    | Html of {
-        top: SZXX.Xml.DOM.element;
+    | Js         of string
+    | Ts         of string
+    | Html       of {
+        parsed: Html.t;
         length: int option;
       }
-    | Pug  of {
-        nodes: Pug.node array;
+    | Pug_native of {
+        parsed: Pug.t;
         length: int option;
       }
-    | Css  of int
+    | Css        of int
 
   let of_source ~filename : Source.t -> t = function
   | Template (Template.HTML source) ->
-    let top = Parsing.Basic.exec_parser Parsing.Html.parser ~filename ~language_name:"HTML" source in
-    Html { top; length = Some (String.length source) }
+    let parsed = Parsing.Basic.exec_parser Parsing.Html.parser ~filename ~language_name:"HTML" source in
+    Html { parsed; length = Some (String.length source) }
   | Template (Template.PUG source) ->
-    let nodes = Basic.exec_parser Pug.parser ~filename ~language_name:"Pug" source in
-    Pug { nodes; length = Some (String.length source) }
+    let parsed = Basic.exec_parser Pug.parser ~filename ~language_name:"Pug" source in
+    Pug_native { parsed; length = Some (String.length source) }
   | Script (Script.JS s) -> Js s
   | Script (Script.TS s) -> Ts s
   | Style (Style.CSS s) -> Css (String.length s)
@@ -46,104 +46,68 @@ module Debug = struct
     | Html
 end
 
-let extract_ts strings source =
-  let+ parsed = Quickjs.extract source Typescript in
-  Array.iter parsed ~f:(Queue.enqueue strings)
+let collect_from_possible_scripts Utils.Collector.{ possible_scripts; _ } template_script ~on_string =
+  Queue.fold possible_scripts ~init:Lwt.return_unit ~f:(fun acc raw ->
+      let* () = acc in
+      match template_script with
+      | JS ->
+        Js.extract raw ~on_string;
+        Lwt.return_unit
+      | TS -> (
+        Quickjs.extract Typescript raw >|= function
+        | Error _ -> ()
+        | Ok (strings, _) -> Array.iter strings ~f:on_string))
 
-let extract_template strings template_script possible_code =
-  match template_script with
-  | JS ->
-    List.iter possible_code ~f:(Js_ast.strings_from_template strings);
-    Lwt.return_unit
-  | TS -> Lwt_list.iter_p (extract_ts strings) possible_code
-
-let collect_pug strings template_script nodes =
-  let rec loop acc Pug.{ selector; arguments; text; children } =
-    let acc =
-      match text, selector with
-      | Some s, Element { parts = "i18n" :: _ } ->
-        Queue.enqueue strings s;
-        acc
-      | Some s, _ -> s :: acc
-      | None, _ -> acc
-    in
-    let acc =
-      List.fold arguments ~init:acc ~f:(fun acc -> function
-        | Pug.{ contents = None; _ } -> acc
-        | Pug.{ contents = Some s; _ } -> s :: acc)
-    in
-    Array.fold children ~init:acc ~f:loop
-  in
-  Array.fold nodes ~init:[] ~f:loop |> extract_template strings template_script
-
-let collect_html strings template_script top =
-  let rec loop acc (node : SZXX.Xml.DOM.element) =
-    let acc =
-      match node with
-      | { text = ""; _ } -> acc
-      | { tag = "i18n"; text; _ } ->
-        Queue.enqueue strings text;
-        acc
-      | { text; _ } -> text :: acc
-    in
-    let acc =
-      List.fold node.attrs ~init:acc ~f:(fun acc -> function
-        | "class", _
-         |"id", _
-         |_, "" ->
-          acc
-        | _, source -> SZXX.Xml.unescape source :: acc)
-    in
-    Array.fold node.children ~init:acc ~f:loop
-  in
-  loop [] top |> extract_template strings template_script
-
-let extract_strings ~filename js_file_errors template_script languages =
-  let strings = Queue.create () in
-  let+ () =
-    Lwt_list.iter_p
-      (function
-        | Language.Html { top; length = _ } -> collect_html strings template_script top
-        | Pug { nodes; length = _ } -> collect_pug strings template_script nodes
-        | Js source -> Js_ast.strings_from_js ~filename strings js_file_errors source
-        | Ts source -> extract_ts strings source
-        | Css _ -> Lwt.return_unit)
-      languages
-  in
-  Queue.iter strings
+let collect_from_languages collector languages =
+  Lwt_list.iter_p
+    (function
+      | Language.Html { parsed; length = _ } ->
+        Html.collect collector parsed;
+        Lwt.return_unit
+      | Pug_native { parsed; length = _ } ->
+        Pug.collect collector parsed;
+        Lwt.return_unit
+      | Js source ->
+        Js.extract_to_collector collector source;
+        Lwt.return_unit
+      | Ts source -> Quickjs.extract_to_collector collector Typescript source
+      | Css _ -> Lwt.return_unit)
+    languages
 
 let debug_template ~filename languages template_script target =
-  let print_iter iter =
+  let print_collector ~error_kind (Utils.Collector.{ strings; file_errors; _ } as collector) =
+    let* () =
+      collect_from_possible_scripts collector template_script ~on_string:(Queue.enqueue strings)
+    in
     let buf = Buffer.create 256 in
-    iter ~f:(fun s ->
-        Buffer.add_string buf s;
-        Buffer.add_char buf '\n');
+    Queue.iter strings ~f:(fun s -> bprintf buf "%s\n" s);
+    if not (Queue.is_empty file_errors)
+    then (
+      bprintf buf "\n%s errors in %s:\n" error_kind filename;
+      Queue.iter file_errors ~f:(bprintf buf "- %s\n"));
     Lwt_io.printl (Buffer.contents buf)
   in
-  let js_file_errors = Queue.create () in
-  let* () =
-    Lwt_list.iter_s
-      (fun lang ->
-        match (lang : Language.t), (target : Debug.t) with
-        | Js source, _ -> Lwt_io.printlf "<JS Code - %d bytes>" (String.length source)
-        | Ts source, _ -> Lwt_io.printlf "<TS Code - %d bytes>" (String.length source)
-        | Css length, _ -> Lwt_io.printlf "<CSS Code - %d bytes>" length
-        | Html { top; length = _ }, Html ->
-          let* () = Lwt_io.printlf !"%{sexp#hum: SZXX.Xml.DOM.element}" top in
-          let* iter = extract_strings ~filename js_file_errors template_script [ lang ] in
-          print_iter iter
-        | (Pug { nodes; length = _ } as lang), Pug ->
-          let* () = Lwt_io.printlf !"%{sexp#hum: Pug.t}" nodes in
-          let* iter = extract_strings ~filename js_file_errors template_script [ lang ] in
-          print_iter iter
-        | Html { length = Some len; _ }, Pug -> Lwt_io.printlf "<HTML code - %d bytes>" len
-        | Html { length = None; _ }, Pug -> Lwt_io.printl "<HTML code>"
-        | Pug { length = Some len; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" len
-        | Pug { length = None; _ }, Html -> Lwt_io.printl "<Pug code>")
-      languages
-  in
-  Lwt_io.printl
-    (Queue.to_array js_file_errors |> Array.map ~f:Utils.Failed.to_string |> String.concat_array ~sep:"\n")
+  Lwt_list.iter_s
+    (fun lang ->
+      match (lang : Language.t), (target : Debug.t) with
+      | Js source, _ -> Lwt_io.printlf "<JS Code - %d bytes>" (String.length source)
+      | Ts source, _ -> Lwt_io.printlf "<TS Code - %d bytes>" (String.length source)
+      | Css length, _ -> Lwt_io.printlf "<CSS Code - %d bytes>" length
+      | Html { parsed; length = _ }, Html ->
+        let collector = Utils.Collector.create ~filename in
+        let* () = Lwt_io.printlf !"%{sexp#hum: Html.t}" parsed in
+        let* () = collect_from_languages collector [ lang ] in
+        print_collector ~error_kind:"HTML" collector
+      | (Pug_native { parsed; length = _ } as lang), Pug ->
+        let* () = Lwt_io.printlf !"%{sexp#hum: Pug.t}" parsed in
+        let collector = Utils.Collector.create ~filename in
+        let* () = collect_from_languages collector [ lang ] in
+        print_collector ~error_kind:"Pug" collector
+      | Html { length = Some len; _ }, Pug -> Lwt_io.printlf "<HTML code - %d bytes>" len
+      | Html { length = None; _ }, Pug -> Lwt_io.printl "<HTML code>"
+      | Pug_native { length = Some len; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" len
+      | Pug_native { length = None; _ }, Html -> Lwt_io.printl "<Pug code>")
+    languages
 
 let parse ~filename ic =
   let open Angstrom in
