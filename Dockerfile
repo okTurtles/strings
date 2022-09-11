@@ -1,4 +1,4 @@
-FROM asemio/mountain-caravan:2.0.0
+FROM asemio/mountain-caravan:2.0.1
 WORKDIR /app
 RUN sudo apk update \
   && sudo apk upgrade \

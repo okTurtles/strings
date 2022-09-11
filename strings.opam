@@ -13,12 +13,12 @@ homepage: "https://github.com/okTurtles/strings"
 doc: "https://github.com/okTurtles/strings"
 bug-reports: "https://github.com/okTurtles/strings/issues"
 depends: [
-  "ocaml" { = "4.13.1" }
+  "ocaml" { = "4.14.0" }
   "ocaml-option-flambda"
-  "dune" { >= "2.6.0"}
+  "dune" { >= "2.8.0"}
 
-  "ocamlformat" { = "0.19.0" & with-test }
-  "ocamlformat-rpc" { = "0.19.0" & with-test }
+  "ocamlformat" { = "0.21.0" & with-test }
+  "ocamlformat-rpc" { = "0.21.0" & with-test }
   "ocaml-lsp-server" { with-test }
 
   "angstrom"

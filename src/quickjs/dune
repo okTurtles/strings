@@ -48,7 +48,7 @@
 (rule
   (targets libquickjs.a)
   (action (bash "
-    cp %{project_root}/../../quickjs/libquickjs.lto.a libquickjs.a
+    cp %{project_root}/../../quickjs/libquickjs.a libquickjs.a
   "))
   (mode standard)
 )

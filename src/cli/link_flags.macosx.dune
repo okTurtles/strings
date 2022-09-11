@@ -1,8 +1,8 @@
-; mold (requires `mold`) Fastest but 1.3.0 does not work on this executable yet
-; (-cclib -fuse-ld=mold -cc clang++)
+; mold (requires `mold`) fastest
+(-cclib -fuse-ld=mold -cc clang++)
 
-; lld (requires `llvm`) 20% faster than the default
-(-cclib -fuse-ld=/usr/local/opt/llvm/bin/ld64.lld -cc clang++)
+; llvm lld (requires `llvm`) 20% faster than the default
+; (-cclib -fuse-ld=/usr/local/opt/llvm/bin/ld64.lld -cc clang++)
 
 ; system default
 ; ()

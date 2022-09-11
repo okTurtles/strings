@@ -3,9 +3,9 @@
 ### Setup
 From the root of the repo:
 ```sh
-brew install opam libomp llvm # llvm for the linker
+brew install opam libomp mold
 
-opam switch create . ocaml-variants.4.13.1+options --no-install
+opam switch create . ocaml-variants.4.14.0+options --no-install
 opam install . --deps-only -t
 
 # Remove old Flow version
