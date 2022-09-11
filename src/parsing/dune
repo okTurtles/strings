@@ -6,6 +6,7 @@
     lwt
     SZXX
 
+    utils
     flow_parser
   )
   (preprocess (pps

@@ -1,4 +1,21 @@
-open Core
+open! Core
+
+module Failed = struct
+  type t = {
+    filename: string;
+    message: string;
+  }
+
+  let to_string { filename; message } = sprintf "Parsing error in %s:\n%s" filename message
+end
+
+module Parsed = struct
+  type t = {
+    strings: string array;
+    possible_scripts: string array;
+  }
+  [@@deriving sexp]
+end
 
 module Exception = struct
   let human = function

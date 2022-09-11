@@ -1,4 +1,4 @@
-open Core
+open! Core
 
 type raw =
   | HTML of string

@@ -1,4 +1,4 @@
-open Core
+open! Core
 open Lwt.Syntax
 open Lwt.Infix
 open Parsing
@@ -15,7 +15,7 @@ module Language = struct
     | Js   of string
     | Ts   of string
     | Html of {
-        top: SZXX.Xml.DOM.element option;
+        top: SZXX.Xml.DOM.element;
         length: int option;
       }
     | Pug  of {
@@ -26,10 +26,7 @@ module Language = struct
 
   let of_source ~filename : Source.t -> t = function
   | Template (Template.HTML source) ->
-    let top =
-      Parsing.Basic.exec_parser Parsing.Html.parser ~filename ~language_name:"HTML" source
-      |> Parsing.Html.finalize ~filename
-    in
+    let top = Parsing.Basic.exec_parser Parsing.Html.parser ~filename ~language_name:"HTML" source in
     Html { top; length = Some (String.length source) }
   | Template (Template.PUG source) ->
     let nodes = Basic.exec_parser Pug.parser ~filename ~language_name:"Pug" source in
@@ -106,8 +103,7 @@ let extract_strings ~filename js_file_errors template_script languages =
   let+ () =
     Lwt_list.iter_p
       (function
-        | Language.Html { top = None; length = _ } -> Lwt.return_unit
-        | Html { top = Some node; length = _ } -> collect_html strings template_script node
+        | Language.Html { top; length = _ } -> collect_html strings template_script top
         | Pug { nodes; length = _ } -> collect_pug strings template_script nodes
         | Js source -> Js_ast.strings_from_js ~filename strings js_file_errors source
         | Ts source -> extract_ts strings source
@@ -133,11 +129,11 @@ let debug_template ~filename languages template_script target =
         | Ts source, _ -> Lwt_io.printlf "<TS Code - %d bytes>" (String.length source)
         | Css length, _ -> Lwt_io.printlf "<CSS Code - %d bytes>" length
         | Html { top; length = _ }, Html ->
-          let* () = Lwt_io.printlf !"%{sexp#hum: SZXX.Xml.DOM.element option}" top in
+          let* () = Lwt_io.printlf !"%{sexp#hum: SZXX.Xml.DOM.element}" top in
           let* iter = extract_strings ~filename js_file_errors template_script [ lang ] in
           print_iter iter
         | (Pug { nodes; length = _ } as lang), Pug ->
-          let* () = Lwt_io.printlf !"%{sexp#hum: Pug.nodes}" nodes in
+          let* () = Lwt_io.printlf !"%{sexp#hum: Pug.t}" nodes in
           let* iter = extract_strings ~filename js_file_errors template_script [ lang ] in
           print_iter iter
         | Html { length = Some len; _ }, Pug -> Lwt_io.printlf "<HTML code - %d bytes>" len
@@ -147,7 +143,7 @@ let debug_template ~filename languages template_script target =
       languages
   in
   Lwt_io.printl
-    (Queue.to_array js_file_errors |> Array.map ~f:Failed.to_string |> String.concat_array ~sep:"\n")
+    (Queue.to_array js_file_errors |> Array.map ~f:Utils.Failed.to_string |> String.concat_array ~sep:"\n")
 
 let parse ~filename ic =
   let open Angstrom in

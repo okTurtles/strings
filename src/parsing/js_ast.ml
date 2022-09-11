@@ -1,5 +1,6 @@
-open Core
+open! Core
 open Flow_ast
+open Utils
 
 let extract strings stmts =
   let rec extract_expr_or_spread = function

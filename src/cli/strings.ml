@@ -1,4 +1,4 @@
-open Core
+open! Core
 open Lwt.Infix
 open Lwt.Syntax
 
@@ -79,14 +79,11 @@ let rec traverse ~root counts strings js_file_errors template_script directory =
               Queue.iter parsed)
         | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".html" ->
           process_file ~root strings counts.html path ~f:(fun ic ->
-              let* nodes =
+              let* top =
                 Parsing.Basic.exec_parser_lwt Parsing.Html.parser ~filename ~language_name:"HTML" ic
               in
               let parsed = Queue.create () in
-              let+ () =
-                Parsing.Html.finalize ~filename nodes
-                |> Option.value_map ~default:Lwt.return_unit ~f:(Vue.collect_html parsed template_script)
-              in
+              let+ () = Vue.collect_html parsed template_script top in
               Queue.iter parsed)
         | { st_kind = S_DIR; _ }, _, _ ->
           traverse ~root counts strings js_file_errors template_script path
@@ -233,7 +230,6 @@ let main { targets; template_script } = function
           | Html, _ when String.is_suffix filename ~suffix:".html" ->
             let* top =
               Parsing.Basic.exec_parser_lwt Parsing.Html.parser ~filename ~language_name:"Pug" ic
-              >|= Parsing.Html.finalize ~filename
             in
             Vue.debug_template ~filename [ Html { top; length = None } ] template_script lang
           | _ -> Lwt_io.printlf "Nothing to do for file [%s]" filename))

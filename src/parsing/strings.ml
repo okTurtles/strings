@@ -1,4 +1,4 @@
-open Core
+open! Core
 
 type line =
   | Translation of (string * string)

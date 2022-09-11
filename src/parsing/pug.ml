@@ -1,4 +1,4 @@
-open Core
+open! Core
 
 type identifier = { parts: string list } [@@deriving yojson, sexp]
 
@@ -31,7 +31,7 @@ type line =
 
 type lines = (int * line) list [@@deriving yojson, sexp]
 
-type nodes = node array [@@deriving yojson, sexp]
+type t = node array [@@deriving yojson, sexp]
 
 let rollup (lines : lines) =
   let rec loop lvl acc_nodes acc_text = function
