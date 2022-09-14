@@ -108,32 +108,32 @@ let block_parser (starts, ends) buf ~f =
   <* many_till line ends
   >>| fun x -> f (Buffer.contents buf) x
 
-let default_error_message ~filename ~language_name ~unparsed =
+let default_error_message ~path ~language_name ~unparsed =
   sprintf
     "The file [%s] contains invalid syntax or %s features unsupported by this tool.\n\
      Please report this so it can be improved.\n\
      The unsupported syntax starts at:\n\
      %s"
-    filename language_name
+    path language_name
     (Yojson.Basic.to_string (`String (String.slice unparsed 0 Int.(min 20 (String.length unparsed)))))
 
-let default_syntax_error ~filename ~language_name ~err =
+let default_syntax_error ~path ~language_name ~err =
   failwithf
     "The file [%s] contains invalid syntax or %s features unsupported by this tool.\n\
      If you are certain the syntax is valid, then please report this error.\n\
-     Error: %s" filename language_name err ()
+     Error: %s" path language_name err ()
 
-let exec_parser parser ~filename ~language_name raw =
+let exec_parser parser ~path ~language_name raw =
   let result = Angstrom.parse_string ~consume:All parser raw in
   match result with
   | Ok parsed -> parsed
-  | Error err -> default_syntax_error ~filename ~language_name ~err
+  | Error err -> default_syntax_error ~path ~language_name ~err
 
-let exec_parser_lwt ?(error_message = default_error_message) parser ~filename ~language_name ic =
+let exec_parser_lwt ?(error_message = default_error_message) parser ~path ~language_name ic =
   let open Lwt.Infix in
   Angstrom_lwt_unix.parse parser ic >|= function
   | Angstrom.Buffered.{ len = 0; _ }, Ok parsed -> parsed
   | Angstrom.Buffered.{ buf; off; len }, Ok _ ->
     let unparsed = Bigstringaf.substring buf ~off ~len in
-    failwith (error_message ~filename ~language_name ~unparsed)
-  | _, Error err -> default_syntax_error ~filename ~language_name ~err
+    failwith (error_message ~path ~language_name ~unparsed)
+  | _, Error err -> default_syntax_error ~path ~language_name ~err

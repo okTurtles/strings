@@ -14,8 +14,26 @@ globalThis.extractFromTypeScript = function (code) {
     }
     forEachChild(node, traverse)
   }
-  traverse(createSourceFile('virtual.ts', code, ScriptTarget.ES2015, false))
-  return [acc, []]
+  traverse(createSourceFile('<source>', code, ScriptTarget.ES2015, false))
+  return {
+    strings: acc,
+    possibleScripts: [],
+    escapedPossibleScripts: []
+  }
+}
+
+globalThis.extractFromAttr = function (code) {
+  try {
+    const ast = createSourceFile('<source>', code, ScriptTarget.ES2015, false)
+    if (ast.statements.length === 1
+      && ast.statements[0].kind === SyntaxKind.ExpressionStatement
+      && ast.statements[0].expression.kind === SyntaxKind.StringLiteral
+    ) {
+      return ast.statements[0].expression.text
+    }
+  } catch (e) {
+    return null
+  }
 }
 
 const lex = require('pug-lexer')
@@ -25,31 +43,36 @@ const walk = require('pug-walk')
 globalThis.extractFromPug = function (code) {
   const ast = parse(lex(code))
   const strings = []
-  const possibleJs = []
+  const possibleScripts = []
+  const escapedPossibleScripts = []
   walk(ast, function before(node, replace) {
     switch (node.type) {
       case 'Tag':
       case 'Filter':
-        node.attrs.forEach(({ val }) => possibleJs.push(val))
+        node.attrs.forEach(({ val }) => {
+          if (val !== '') {
+            escapedPossibleScripts.push(val)
+          }
+        })
         if (node.name === 'i18n') {
           node.block.nodes.forEach(({ type, val }) => {
-            if (type === 'Text') {
+            if (type === 'Text' && val !== '') {
               strings.push(val)
             }
           })
         }
         break
       case 'Code':
-        possibleJs.push(node.val)
+        possibleScripts.push(node.val)
         break
       case 'InterpolatedTag':
-        possibleJs.push(node.expr)
+        possibleScripts.push(node.expr)
         break
       case 'Conditional':
       case 'While':
-        possibleJs.push(node.test)
+        possibleScripts.push(node.test)
         break
     }
   })
-  return [strings, possibleJs]
+  return { strings, possibleScripts, escapedPossibleScripts }
 }

@@ -54,9 +54,9 @@ value stub_init_contexts(value v_num_threads)
   CAMLreturn (v_ok_of_v(v_ret, Val_unit));
 }
 
-value convert_string_array(JSContext *ctx, JSValue jspair, int index, value v_ret, value v_field) {
+value convert_string_array(JSContext *ctx, JSValue jspair, string key, value v_ret, value v_field) {
   CAMLparam2(v_ret, v_field);
-  JSValue jsarray = JS_GetPropertyUint32(ctx, jspair, index);
+  JSValue jsarray = JS_GetPropertyStr(ctx, jspair, key.c_str());
   JSValue prop_len = JS_GetPropertyStr(ctx, jsarray, "length");
   int64_t len;
   if (JS_ToInt64(ctx, &len, prop_len)) {
@@ -117,8 +117,8 @@ value stub_extract(value v_id, value v_code, value v_fn_name)
 
   caml_leave_blocking_section();
 
-  v_arr1 = convert_string_array(ctx, ret_val, 0, v_ret, v_field);
-  v_arr2 = convert_string_array(ctx, ret_val, 1, v_ret, v_field);
+  v_arr1 = convert_string_array(ctx, ret_val, "strings", v_ret, v_field);
+  v_arr2 = convert_string_array(ctx, ret_val, "possibleScripts", v_ret, v_field);
   if (Tag_val(v_arr1) == 0 && Tag_val(v_arr2) == 0) {
     // Ok, Ok
     // Tuple2

@@ -32,6 +32,16 @@ type counts = {
   ts: int ref;
 }
 
+type common_options = {
+  targets: string list;
+  template_script: Vue.template_script;
+  fast_pug: bool;
+}
+
+type action =
+  | Debug of Vue.Debug.t
+  | Run
+
 let process_file ~root table count filename template_script ~f:get_collector : unit Lwt.t =
   Lwt_pool.use pool (fun () ->
       incr count;
@@ -46,12 +56,12 @@ let process_file ~root table count filename template_script ~f:get_collector : u
       in
       let* () =
         Utils.Collector.render_errors collector
-        |> Option.value_map ~default:Lwt.return_unit ~f:(Lwt_io.eprintlf "❌ %s")
+        |> Option.value_map ~default:Lwt.return_unit ~f:Lwt_io.eprintl
       in
       Queue.iter collector.strings ~f:handler;
       Vue.collect_from_possible_scripts collector template_script ~on_string:handler)
 
-let rec traverse ~root counts strings template_script directory =
+let rec traverse ~root counts strings ({ template_script; fast_pug; _ } as options) directory =
   let* entries =
     Lwt_pool.use pool (fun () -> Lwt_unix.files_of_directory directory |> Lwt_stream.to_list)
   in
@@ -65,39 +75,39 @@ let rec traverse ~root counts strings template_script directory =
         match stat, lazy (String.slice filename (-4) 0), lazy (String.slice filename (-3) 0) with
         | { st_kind = S_REG; _ }, _, (lazy ".js") when String.is_suffix ~suffix:".js" filename ->
           process_file ~root strings counts.js path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~filename in
+              let collector = Utils.Collector.create ~path in
               let+ source = Lwt_io.read ic in
               Parsing.Js.extract_to_collector collector source;
               collector)
         | { st_kind = S_REG; _ }, _, (lazy ".ts") ->
           process_file ~root strings counts.ts path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~filename in
+              let collector = Utils.Collector.create ~path in
               let* source = Lwt_io.read ic in
               let+ () = Quickjs.extract_to_collector collector Typescript source in
               collector)
         | { st_kind = S_REG; _ }, (lazy ".vue"), _ ->
           process_file ~root strings counts.vue path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~filename in
-              let* languages = Vue.parse ~filename ic in
+              let collector = Utils.Collector.create ~path in
+              let* languages = Vue.parse ~path ~fast_pug ic in
               let+ () = Vue.collect_from_languages collector languages in
               collector)
         | { st_kind = S_REG; _ }, (lazy ".pug"), _ ->
           process_file ~root strings counts.pug path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~filename in
+              let collector = Utils.Collector.create ~path in
               let+ parsed =
-                Parsing.Basic.exec_parser_lwt Parsing.Pug.parser ~filename ~language_name:"Pug" ic
+                Parsing.Basic.exec_parser_lwt Parsing.Pug.parser ~path ~language_name:"Pug" ic
               in
               Parsing.Pug.collect collector parsed;
               collector)
         | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".html" ->
           process_file ~root strings counts.html path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~filename in
+              let collector = Utils.Collector.create ~path in
               let+ parsed =
-                Parsing.Basic.exec_parser_lwt Parsing.Html.parser ~filename ~language_name:"HTML" ic
+                Parsing.Basic.exec_parser_lwt Parsing.Html.parser ~path ~language_name:"HTML" ic
               in
               Parsing.Html.collect collector parsed;
               collector)
-        | { st_kind = S_DIR; _ }, _, _ -> traverse ~root counts strings template_script path
+        | { st_kind = S_DIR; _ }, _, _ -> traverse ~root counts strings options path
         | _ -> Lwt.return_unit))
     entries
 
@@ -205,12 +215,6 @@ let directory_exists path =
   | { st_kind = _; _ } -> failwithf "%s already exists, but is not a directory" path ()
   | exception _ -> false
 
-type common_options = {
-  targets: string list;
-  template_script: Vue.template_script;
-  fast_pug: bool;
-}
-
 let handle_system_failure = function
 | (Failure _ as ex)
  |(Core_unix.Unix_error _ as ex)
@@ -220,36 +224,34 @@ let handle_system_failure = function
   exit 1
 | exn -> raise exn
 
-type action =
-  | Debug of Vue.Debug.t
-  | Run
-
-let main { targets; template_script; fast_pug } = function
+let main ({ targets; template_script; fast_pug } as options) = function
 | Debug lang ->
   Lwt_list.iter_s
-    (fun filename ->
-      let* () = Lwt_io.printlf "Debugging [%s]" filename in
-      Lwt_io.with_file ~flags:read_flags ~mode:Input filename (fun ic ->
-          match lang, String.slice filename (-4) 0 with
+    (fun path ->
+      let* () = Lwt_io.printlf "\n>>> Debugging [%s]" path in
+      Lwt_io.with_file ~flags:read_flags ~mode:Input path (fun ic ->
+          match lang, String.slice path (-4) 0 with
           | _, ".vue" ->
-            let* languages = Vue.parse ~filename ic in
-            Vue.debug_template ~filename languages template_script lang
+            let* languages = Vue.parse ~path ~fast_pug ic in
+            Vue.debug_template ~path languages template_script lang
           | Pug, ".pug" when fast_pug ->
             let* parsed =
-              Parsing.Basic.exec_parser_lwt Parsing.Pug.parser ~filename ~language_name:"Pug" ic
+              Parsing.Basic.exec_parser_lwt Parsing.Pug.parser ~path ~language_name:"Pug" ic
             in
-            Vue.debug_template ~filename [ Pug_native { parsed; length = None } ] template_script lang
+            Vue.debug_template ~path [ Pug_native { parsed; length = None } ] template_script lang
           | Pug, ".pug" ->
             let* source = Lwt_io.read ic in
-            let* xx = Quickjs.extract Pug source in
-
-            Lwt.return_unit
-          | Html, _ when String.is_suffix filename ~suffix:".html" ->
+            let collector = Utils.Collector.create ~path in
+            let* () = Quickjs.extract_to_collector collector Pug source in
+            Vue.debug_template ~path
+              [ Pug { collector; length = String.length source } ]
+              template_script lang
+          | Html, _ when String.is_suffix path ~suffix:".html" ->
             let* parsed =
-              Parsing.Basic.exec_parser_lwt Parsing.Html.parser ~filename ~language_name:"Pug" ic
+              Parsing.Basic.exec_parser_lwt Parsing.Html.parser ~path ~language_name:"Pug" ic
             in
-            Vue.debug_template ~filename [ Html { parsed; length = None } ] template_script lang
-          | _ -> Lwt_io.printlf "Nothing to do for file [%s]" filename))
+            Vue.debug_template ~path [ Html { parsed; length = None } ] template_script lang
+          | _ -> Lwt_io.printlf "Nothing to do for file [%s]" path))
     targets
 | Run ->
   let overall_time = Utils.time () in
@@ -275,7 +277,7 @@ let main { targets; template_script; fast_pug } = function
       Lwt_list.iter_p
         (fun directory ->
           let root = String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory in
-          traverse ~root:(sprintf "%s/" root) counts english_list template_script root)
+          traverse ~root:(sprintf "%s/" root) counts english_list options root)
         targets
     in
     let english =
@@ -304,7 +306,7 @@ let main { targets; template_script; fast_pug } = function
           Lwt_unix.stat path >>= function
           | { st_kind = S_REG; _ } ->
             let* other =
-              Lwt_io.with_file ~mode:Input ~flags:read_flags path (Parsing.Strings.parse ~filename)
+              Lwt_io.with_file ~mode:Input ~flags:read_flags path (Parsing.Strings.parse ~path)
             in
             write_other ~language english other
           | _ -> Lwt.return_unit)
@@ -320,7 +322,7 @@ let () =
     let%map_open targets = Param.("path" %: string |> sequence |> anon)
     and use_ts = flag "--ts" ~full_flag_required:() no_arg ~doc:"Interpret Vue templates as TypeScript"
     and fast_pug =
-      flag "--fast-pug" ~full_flag_required:() no_arg
+      flag "--fast-pug" ~aliases:[ "--fp" ] ~full_flag_required:() no_arg
         ~doc:"Use the native Pug parser. Much faster but not every Pug feature is supported."
     in
     { targets; template_script = (if use_ts then TS else JS); fast_pug }

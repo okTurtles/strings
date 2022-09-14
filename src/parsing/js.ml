@@ -50,5 +50,5 @@ let extract_to_collector (collector : Utils.Collector.t) source =
   | exception Parse_error.Error (_, (_ :: _ as errors)) -> parse_error collector (First errors)
   | exception Parse_error.Error (_, []) -> parse_error collector (Second "Syntax error")
   | exception exn ->
-    print_endline (sprintf "Unexpected error in %s\nPlease report this bug." collector.filename);
+    print_endline (sprintf "Unexpected error in %s\nPlease report this bug." collector.path);
     raise exn

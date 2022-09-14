@@ -22,18 +22,26 @@ module Language = struct
         parsed: Pug.t;
         length: int option;
       }
+    | Pug        of {
+        collector: Utils.Collector.t;
+        length: int;
+      }
     | Css        of int
 
-  let of_source ~filename : Source.t -> t = function
+  let of_source ~path ~fast_pug : Source.t -> t Lwt.t = function
   | Template (Template.HTML source) ->
-    let parsed = Parsing.Basic.exec_parser Parsing.Html.parser ~filename ~language_name:"HTML" source in
-    Html { parsed; length = Some (String.length source) }
+    let parsed = Parsing.Basic.exec_parser Parsing.Html.parser ~path ~language_name:"HTML" source in
+    Html { parsed; length = Some (String.length source) } |> Lwt.return
+  | Template (Template.PUG source) when fast_pug ->
+    let parsed = Basic.exec_parser Pug.parser ~path ~language_name:"Pug" source in
+    Pug_native { parsed; length = Some (String.length source) } |> Lwt.return
   | Template (Template.PUG source) ->
-    let parsed = Basic.exec_parser Pug.parser ~filename ~language_name:"Pug" source in
-    Pug_native { parsed; length = Some (String.length source) }
-  | Script (Script.JS s) -> Js s
-  | Script (Script.TS s) -> Ts s
-  | Style (Style.CSS s) -> Css (String.length s)
+    let collector = Utils.Collector.create ~path in
+    let+ () = Quickjs.extract_to_collector collector Pug source in
+    Pug { collector; length = String.length source }
+  | Script (Script.JS s) -> Js s |> Lwt.return
+  | Script (Script.TS s) -> Ts s |> Lwt.return
+  | Style (Style.CSS s) -> Css (String.length s) |> Lwt.return
 end
 
 type template_script =
@@ -67,6 +75,9 @@ let collect_from_languages collector languages =
       | Pug_native { parsed; length = _ } ->
         Pug.collect collector parsed;
         Lwt.return_unit
+      | Pug { collector = src; length = _ } ->
+        Utils.Collector.blit_transfer ~src ~dst:collector;
+        Lwt.return_unit
       | Js source ->
         Js.extract_to_collector collector source;
         Lwt.return_unit
@@ -74,7 +85,7 @@ let collect_from_languages collector languages =
       | Css _ -> Lwt.return_unit)
     languages
 
-let debug_template ~filename languages template_script target =
+let debug_template ~path languages template_script target =
   let print_collector ~error_kind (Utils.Collector.{ strings; file_errors; _ } as collector) =
     let* () =
       collect_from_possible_scripts collector template_script ~on_string:(Queue.enqueue strings)
@@ -83,7 +94,7 @@ let debug_template ~filename languages template_script target =
     Queue.iter strings ~f:(fun s -> bprintf buf "%s\n" s);
     if not (Queue.is_empty file_errors)
     then (
-      bprintf buf "\n%s errors in %s:\n" error_kind filename;
+      bprintf buf "\n❌ %s errors in %s:\n" error_kind path;
       Queue.iter file_errors ~f:(bprintf buf "- %s\n"));
     Lwt_io.printl (Buffer.contents buf)
   in
@@ -94,33 +105,37 @@ let debug_template ~filename languages template_script target =
       | Ts source, _ -> Lwt_io.printlf "<TS Code - %d bytes>" (String.length source)
       | Css length, _ -> Lwt_io.printlf "<CSS Code - %d bytes>" length
       | Html { parsed; length = _ }, Html ->
-        let collector = Utils.Collector.create ~filename in
+        let collector = Utils.Collector.create ~path in
         let* () = Lwt_io.printlf !"%{sexp#hum: Html.t}" parsed in
         let* () = collect_from_languages collector [ lang ] in
         print_collector ~error_kind:"HTML" collector
       | (Pug_native { parsed; length = _ } as lang), Pug ->
         let* () = Lwt_io.printlf !"%{sexp#hum: Pug.t}" parsed in
-        let collector = Utils.Collector.create ~filename in
+        let collector = Utils.Collector.create ~path in
         let* () = collect_from_languages collector [ lang ] in
         print_collector ~error_kind:"Pug" collector
+      | Pug { collector; length = _ }, Pug -> print_collector ~error_kind:"Pug" collector
       | Html { length = Some len; _ }, Pug -> Lwt_io.printlf "<HTML code - %d bytes>" len
       | Html { length = None; _ }, Pug -> Lwt_io.printl "<HTML code>"
       | Pug_native { length = Some len; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" len
-      | Pug_native { length = None; _ }, Html -> Lwt_io.printl "<Pug code>")
+      | Pug_native { length = None; _ }, Html -> Lwt_io.printl "<Pug code>"
+      | Pug { length; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" length)
     languages
 
-let parse ~filename ic =
-  let open Angstrom in
-  let open Basic in
+let parse ~path ~fast_pug ic =
   let buf = Buffer.create 256 in
-  let languages =
-    choice
-      [
-        (Template.parser buf >>| fun x -> Source.Template x);
-        (Script.parser buf >>| fun x -> Source.Script x);
-        (Style.parser buf >>| fun x -> Source.Style x);
-      ]
+  let parser =
+    let open Angstrom in
+    let open Basic in
+    let languages =
+      choice
+        [
+          (Template.parser buf >>| fun x -> Source.Template x);
+          (Script.parser buf >>| fun x -> Source.Script x);
+          (Style.parser buf >>| fun x -> Source.Style x);
+        ]
+    in
+    mlws *> sep_by mlws languages <* mlws
   in
-  let parser = mlws *> sep_by mlws languages <* mlws in
-  Basic.exec_parser_lwt parser ~filename ~language_name:"Vue" ic
-  >|= List.map ~f:(Language.of_source ~filename)
+  Basic.exec_parser_lwt parser ~path ~language_name:"Vue" ic
+  >>= Lwt_list.map_p (Language.of_source ~path ~fast_pug)
