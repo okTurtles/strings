@@ -27,18 +27,26 @@ module Language = struct
         length: int;
       }
     | Css        of int
+    | Failed     of string
 
-  let of_source ~path ~fast_pug : Source.t -> t Lwt.t = function
+  let of_source ~path ~slow_pug : Source.t -> t Lwt.t = function
   | Template (Template.HTML source) ->
-    let parsed = Parsing.Basic.exec_parser Parsing.Html.parser ~path ~language_name:"HTML" source in
-    Html { parsed; length = Some (String.length source) } |> Lwt.return
-  | Template (Template.PUG source) when fast_pug ->
-    let parsed = Basic.exec_parser Pug.parser ~path ~language_name:"Pug" source in
-    Pug_native { parsed; length = Some (String.length source) } |> Lwt.return
-  | Template (Template.PUG source) ->
-    let collector = Utils.Collector.create ~path in
-    let+ () = Quickjs.extract_to_collector collector Pug source in
-    Pug { collector; length = String.length source }
+    let on_ok parsed = Html { parsed; length = Some (String.length source) } in
+    let on_error ~msg = Failed msg in
+    Parsing.Basic.exec_parser ~on_ok ~on_error Parsing.Html.parser ~path ~language_name:"HTML" source
+    |> Lwt.return
+  | Template (Template.PUG source) -> (
+    let slow_parse () =
+      let collector = Utils.Collector.create ~path in
+      let+ () = Quickjs.extract_to_collector collector Pug source in
+      Pug { collector; length = String.length source }
+    in
+    match slow_pug with
+    | true -> slow_parse ()
+    | false ->
+      let on_ok parsed = Pug_native { parsed; length = Some (String.length source) } |> Lwt.return in
+      let on_error ~msg:_ = slow_parse () in
+      Basic.exec_parser ~on_ok ~on_error Pug.parser ~path ~language_name:"Pug" source)
   | Script (Script.JS s) -> Js s |> Lwt.return
   | Script (Script.TS s) -> Ts s |> Lwt.return
   | Style (Style.CSS s) -> Css (String.length s) |> Lwt.return
@@ -82,7 +90,10 @@ let collect_from_languages collector languages =
         Js.extract_to_collector collector source;
         Lwt.return_unit
       | Ts source -> Quickjs.extract_to_collector collector Typescript source
-      | Css _ -> Lwt.return_unit)
+      | Css _ -> Lwt.return_unit
+      | Failed msg ->
+        Queue.enqueue collector.file_errors msg;
+        Lwt.return_unit)
     languages
 
 let debug_template ~path languages template_script target =
@@ -119,10 +130,11 @@ let debug_template ~path languages template_script target =
       | Html { length = None; _ }, Pug -> Lwt_io.printl "<HTML code>"
       | Pug_native { length = Some len; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" len
       | Pug_native { length = None; _ }, Html -> Lwt_io.printl "<Pug code>"
-      | Pug { length; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" length)
+      | Pug { length; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" length
+      | Failed msg, _ -> Lwt_io.printlf "❌ Parsing error in path: %s" msg)
     languages
 
-let parse ~path ~fast_pug ic =
+let parse ~path ~slow_pug ic =
   let buf = Buffer.create 256 in
   let parser =
     let open Angstrom in
@@ -137,5 +149,5 @@ let parse ~path ~fast_pug ic =
     in
     mlws *> sep_by mlws languages <* mlws
   in
-  Basic.exec_parser_lwt parser ~path ~language_name:"Vue" ic
-  >>= Lwt_list.map_p (Language.of_source ~path ~fast_pug)
+  let on_ok ll = Lwt_list.map_p (Language.of_source ~path ~slow_pug) ll in
+  Basic.exec_parser_lwt ~on_ok parser ~path ~language_name:"Vue" ic

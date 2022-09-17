@@ -92,7 +92,12 @@ let parser =
   let _blank1 = sep_by1 comments ws1 in
   let mlblank = sep_by comments mlws in
   let mlblank1 = sep_by1 comments mlws1 in
-  let single_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'\'' in
+  let pug_string =
+    let single_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'\'' in
+    let double_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'"' in
+    let unquoted_string = take_while1 is_identifier in
+    choice [ single_quoted_string; double_quoted_string; unquoted_string ]
+  in
   let symbols ll = ll |> List.map ~f:string |> choice in
 
   let word = take_while1 alphanum in
@@ -113,8 +118,8 @@ let parser =
     lift3
       (fun prefix identifier contents -> { prefix; identifier; contents })
       (maybe (symbols [ ":$"; ":"; "@"; "#" ]))
-      identifier
-      (maybe (char '=' *> blank *> single_quoted_string))
+      (identifier <* blank)
+      (maybe (char '=' *> blank *> pug_string))
   in
 
   let at_least_indent indent = string (String.make indent ' ') in

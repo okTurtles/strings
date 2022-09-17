@@ -446,3 +446,16 @@ let extract ~on_string stmts =
   in
 
   List.iter stmts ~f:extract_statement
+
+let unescape = function
+| [
+    ( _,
+      Statement.Expression
+        {
+          expression = _, Literal { value = String s; raw = _; comments = _ };
+          directive = _;
+          comments = _;
+        } );
+  ] ->
+  Some s
+| _ -> None

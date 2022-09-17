@@ -1,5 +1,4 @@
 open! Core
-open Utils
 
 let errors_to_string errors =
   let buf = Buffer.create 128 in
@@ -11,14 +10,10 @@ let errors_to_string errors =
       bprintf buf "Line %d (%d) to line %d (%d): %s\n" sl sc el ec (Parse_error.PP.error err));
   Buffer.contents buf
 
-let parse_error ({ file_errors; _ } : Collector.t) error =
-  let message =
-    match error with
-    | First (_ :: _ :: _ as ll) -> errors_to_string ll
-    | First ll -> errors_to_string ll
-    | Second msg -> msg
-  in
-  Queue.enqueue file_errors message
+let parse_error = function
+| First (_ :: _ :: _ as ll) -> errors_to_string ll
+| First ll -> errors_to_string ll
+| Second msg -> msg
 
 let debug statements =
   sprintf "Statements: %s"
@@ -27,28 +22,35 @@ let debug statements =
     |> String.concat ~sep:", ")
   |> print_endline
 
-let extract source ~on_string =
-  match Parser_flow.program source with
-  | _, _ :: _ -> ()
-  | ast, [] -> (
-    match ast with
-    | _, Flow_ast.Program.{ statements; comments = _; all_comments = _ } ->
-      (* debug statements; *)
-      Js_ast.extract ~on_string statements)
-  | exception _ -> ()
-
 let parse_options = Some { Parser_env.default_parse_options with esproposal_export_star_as = true }
 
-let extract_to_collector (collector : Utils.Collector.t) source =
+let parse ~path source =
   match Parser_flow.program ~parse_options source with
-  | _, (_ :: _ as errors) -> failwith (errors_to_string errors)
+  | _, (_ :: _ as errors) -> Error (lazy (errors_to_string errors))
   | ast, [] -> (
     match ast with
-    | _, Flow_ast.Program.{ statements; comments = _; all_comments = _ } ->
-      (* debug statements; *)
-      Js_ast.extract ~on_string:(Queue.enqueue collector.strings) statements)
-  | exception Parse_error.Error (_, (_ :: _ as errors)) -> parse_error collector (First errors)
-  | exception Parse_error.Error (_, []) -> parse_error collector (Second "Syntax error")
+    | _, Flow_ast.Program.{ statements; comments = _; all_comments = _ } -> Ok statements)
+  | exception Parse_error.Error (_, (_ :: _ as errors)) -> Error (lazy (parse_error (First errors)))
+  | exception Parse_error.Error (_, []) -> Error (lazy (parse_error (Second "Syntax error")))
   | exception exn ->
-    print_endline (sprintf "Unexpected error in %s\nPlease report this bug." collector.path);
-    raise exn
+    Error
+      (lazy
+        (sprintf "Unexpected error in %s: %s\nPlease report this bug." path (Utils.Exception.human exn)))
+
+let unescape source =
+  match parse ~path:"attribute" source with
+  | Ok stmts -> (
+    match Js_ast.unescape stmts with
+    | Some s -> s
+    | None -> source)
+  | Error _ -> source
+
+let extract source ~on_string =
+  match parse ~path:"attribute" source with
+  | Ok stmts -> Js_ast.extract ~on_string stmts
+  | Error _ -> ()
+
+let extract_to_collector ({ path; strings; file_errors; _ } : Utils.Collector.t) source =
+  match parse ~path source with
+  | Ok stmts -> Js_ast.extract ~on_string:(Queue.enqueue strings) stmts
+  | Error (lazy msg) -> Queue.enqueue file_errors msg

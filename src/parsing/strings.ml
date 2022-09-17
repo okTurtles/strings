@@ -33,8 +33,8 @@ let parse ~path ic =
   let open Lwt.Syntax in
   let table = String.Table.create () in
 
-  let error_message ~path ~language_name:_ ~unparsed =
-    sprintf
+  let error_handler ~unparsed _opt =
+    failwithf
       "There is a syntax error in file [%s].\n\
        Translations must follow this format and end in a semicolon: \"english text\" = \"translated \
        text\";\n\
@@ -42,9 +42,12 @@ let parse ~path ic =
        %s"
       path
       (String.take_while ~f:(Char.( <> ) '\n') unparsed)
+      ()
   in
-
-  let+ lines = Basic.exec_parser_lwt ~error_message parser ~path ~language_name:".strings" ic in
+  let+ lines =
+    Basic.exec_parser_lwt ~on_ok:Lwt.return ~on_error:error_handler parser ~path ~language_name:".strings"
+      ic
+  in
   List.iter lines ~f:(function
     | Translation (x, y) -> String.Table.set table ~key:x ~data:y
     | Comment -> ());
