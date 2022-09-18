@@ -143,7 +143,12 @@ let write_english english =
         Lwt_io.with_file ~flags:write_flags ~mode:Output path_json (fun oc_json ->
             let* () = Lwt.join [ Lwt_io.write oc_strings header; Lwt_io.write_char oc_json '{' ] in
             let* () =
-              String.Table.fold english ~init:Lwt.return_unit ~f:(fun ~key ~data acc ->
+              (* Switch to a map to preserve order as much as possible and therefore reduce merge conflicts *)
+              let map =
+                String.Table.fold english ~init:String.Map.empty ~f:(fun ~key ~data acc ->
+                    String.Map.set acc ~key ~data)
+              in
+              String.Map.fold map ~init:Lwt.return_unit ~f:(fun ~key ~data acc ->
                   let fmt_key = fmt key in
                   let output_strings = sprintf "/* %s */\n%s = %s;\n\n" data fmt_key fmt_key in
                   let output_json = json_pair fmt_key fmt_key first in

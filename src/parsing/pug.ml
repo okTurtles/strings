@@ -118,8 +118,8 @@ let parser =
     lift3
       (fun prefix identifier contents -> { prefix; identifier; contents })
       (maybe (symbols [ ":$"; ":"; "@"; "#" ]))
-      (identifier <* blank)
-      (maybe (char '=' *> blank *> pug_string))
+      identifier
+      (maybe (mlblank *> char '=' *> mlblank *> pug_string))
   in
 
   let at_least_indent indent = string (String.make indent ' ') in

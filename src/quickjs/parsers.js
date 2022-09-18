@@ -41,13 +41,13 @@ const walk = require('pug-walk')
 
 globalThis.extractFromPug = function (code) {
   const ast = parse(lex(code))
-  const strings = []
-  const possibleScripts = []
+  const accStrings = {}
+  const accPossibleScripts = []
   const addAttr = function (s) {
     if (typeof s !== 'string' || s === '') { return }
     const parsed = extractFromAttr(s)
-    if (parsed !== '') {
-      possibleScripts.push(parsed)
+    if (parsed != null && parsed !== '') {
+      accPossibleScripts.push(parsed)
     }
   }
   walk(ast, function before (node, replace) {
@@ -58,22 +58,32 @@ globalThis.extractFromPug = function (code) {
         if (node.name === 'i18n') {
           node.block.nodes.forEach(({ type, val }) => {
             if (type === 'Text' && val !== '') {
-              strings.push(val)
+              accStrings[val] = true
             }
           })
         }
         break
+      case 'Block':
+        node.nodes.forEach(({ type, val }) => {
+          if (type === 'Text' && val !== '') {
+            accPossibleScripts.push(val)
+          }
+        })
+        break
       case 'Code':
-        possibleScripts.push(node.val)
+        accPossibleScripts.push(node.val)
         break
       case 'InterpolatedTag':
-        possibleScripts.push(node.expr)
+        accPossibleScripts.push(node.expr)
         break
       case 'Conditional':
       case 'While':
-        possibleScripts.push(node.test)
+        accPossibleScripts.push(node.test)
         break
     }
   })
-  return { strings, possibleScripts }
+  return {
+    strings: Object.keys(accStrings),
+    possibleScripts: accPossibleScripts.filter((s) => accStrings[s] == null)
+  }
 }

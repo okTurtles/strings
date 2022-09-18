@@ -49,7 +49,7 @@ STRINGS_CID="$(docker create strings:latest)" \
 && docker rm "$STRINGS_CID" \
 && tar czvf strings.linux.tar.gz strings.linux lib
 
-# Trying it on Ubuntu 18.04
+# Trying it on Ubuntu 20.04
 docker run -it --rm \
   -v "$(pwd):/app" \
   -v "$(realpath "$(pwd)/../group-income-simple"):/repo" \

@@ -20,11 +20,8 @@ RUN echo '=== Installing QuickJS ===' \
 RUN echo '=== Installing Flow ===' \
   && git clone --branch v0.183.1 --depth 1 https://github.com/facebook/flow.git flow
 
-RUN echo '=== Installing TypeScript ===' \
-  && npm install --no-save typescript browserify
-
-RUN echo '=== Installing Pug ===' \
-  && npm install --no-save pug-lexer pug-parser pug-walk
+RUN echo '=== Installing JS dependencies ===' \
+  && npm install --no-save typescript browserify pug-lexer pug-parser pug-walk
 
 COPY src src
 COPY dune dune
