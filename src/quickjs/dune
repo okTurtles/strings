@@ -41,22 +41,22 @@
 (rule
   (targets quickjs.h)
   (action (bash "
-    cp %{project_root}/../../quickjs/quickjs.h quickjs.h
+    cp %{project_root}/../../quickjs/quickjs.h .
   "))
   (mode standard)
 )
 (rule
   (targets libquickjs.a)
   (action (bash "
-    cp %{project_root}/../../quickjs/libquickjs.a libquickjs.a
+    cp %{project_root}/../../quickjs/libquickjs.a .
   "))
   (mode standard)
 )
 (rule
   (targets libomp.a)
   (action (bash "
-    cp /usr/local/Cellar/libomp/14.0.6/lib/libomp.a libomp.a &> /dev/null \
-    || cp /usr/lib/libgomp.a libomp.a
+    cp /usr/local/Cellar/libomp/14.0.6/lib/libomp.a . &> /dev/null \
+    || cp /usr/lib/libgomp.a .
   "))
   (mode standard)
 )

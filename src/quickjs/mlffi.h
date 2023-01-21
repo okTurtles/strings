@@ -22,17 +22,7 @@ value v_ok_of_v(value v_ret, value v_ok)
   CAMLreturn (v_ret);
 }
 
-value v_error_of_cstring(value v_ret, value v_field, const char* error)
-{
-  CAMLparam2(v_ret, v_field);
-  v_field = caml_alloc_initialized_string(strlen(error), error);
-  // Size 1, tag 1 (Error)
-  v_ret = caml_alloc_small(1, 1);
-  Field(v_ret, 0) = v_field;
-  CAMLreturn (v_ret);
-}
-
-value v_error_of_string(value v_ret, value v_field, string &error)
+value v_error_of_string(value v_ret, value v_field, const string& error)
 {
   CAMLparam2(v_ret, v_field);
   v_field = caml_alloc_initialized_string(error.length(), error.c_str());
@@ -42,33 +32,33 @@ value v_error_of_string(value v_ret, value v_field, string &error)
   CAMLreturn (v_ret);
 }
 
-string stringify_prop(JSContext *ctx, JSValue &js, const char *prop_name) {
-  JSValue prop = JS_GetPropertyStr(ctx, js, prop_name);
+string stringify_prop(JSContext* const ctx, const JSValue& js, const char* const prop_name) {
+  JSValue prop { JS_GetPropertyStr(ctx, js, prop_name) };
   if (!JS_IsUndefined(prop)) {
-    size_t len;
-    const char *str = JS_ToCStringLen(ctx, &len, prop);
-    if (str == nullptr) {
-      return string("<null>");
+    size_t len {};
+    const char* str { JS_ToCStringLen(ctx, &len, prop) };
+    if (!str) {
+      return string { "<null>" };
     } else {
-      string ret(str, len);
+      string ret { str, len };
       JS_FreeCString(ctx, str);
       return ret;
     }
   }
-  return string("<undefined>");
+  return string { "<undefined>" };
 }
 
-string stringify_exn(JSContext *ctx) {
-  JSValue exception_val = JS_GetException(ctx);
-  ostringstream ss;
+string stringify_exn(JSContext* const ctx) {
+  JSValue exception_val { JS_GetException(ctx) };
+  ostringstream ss {};
 
   if (JS_IsError(ctx, exception_val)) {
     ss << stringify_prop(ctx, exception_val, "message");
     ss << stringify_prop(ctx, exception_val, "stack");
   } else {
-    size_t len;
-    const char *str = JS_ToCStringLen(ctx, &len, exception_val);
-    ss << string(str, len);
+    size_t len {};
+    const char* str { JS_ToCStringLen(ctx, &len, exception_val) };
+    ss << string { str, len };
     JS_FreeCString(ctx, str);
   }
 
