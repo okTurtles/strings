@@ -20,10 +20,6 @@ let plural i = if i = 1 then "" else "s"
 
 let pool = Lwt_pool.create 6 (fun () -> Lwt.return_unit)
 
-let read_flags = Core_unix.[ O_RDONLY; O_NONBLOCK ]
-
-let write_flags = Core_unix.[ O_WRONLY; O_NONBLOCK; O_TRUNC; O_CREAT ]
-
 type counts = {
   vue: int ref;
   pug: int ref;
@@ -33,6 +29,7 @@ type counts = {
 }
 
 type common_options = {
+  outdir: string;
   targets: string list;
   template_script: Vue.template_script;
   slow_pug: bool;
@@ -42,84 +39,91 @@ type action =
   | Debug of Vue.Debug.t
   | Run
 
-let process_file ~root table count filename template_script ~f:get_collector : unit Lwt.t =
+type traversal = {
+  rootlen: int;
+  table: String.Set.t String.Table.t;
+  template_script: Vue.template_script;
+  slow_pug: bool;
+  counts: counts;
+}
+
+let process_file traversal count filename ~f:get_collector =
   Lwt_pool.use pool (fun () ->
       incr count;
       let* (collector : Utils.Collector.t) =
-        Lwt_io.with_file ~mode:Input ~flags:read_flags filename get_collector
+        Lwt_io.with_file ~mode:Input ~flags:Utils.Io.read_flags filename get_collector
       in
       let handler string =
-        let data = String.chop_prefix filename ~prefix:root |> Option.value ~default:filename in
-        String.Table.update table string ~f:(function
-          | None -> String.Set.add String.Set.empty data
-          | Some set -> String.Set.add set data)
+        let realname = String.slice filename traversal.rootlen 0 in
+        String.Table.update traversal.table string ~f:(function
+          | None -> String.Set.add String.Set.empty realname
+          | Some set -> String.Set.add set realname)
       in
       let* () =
         Utils.Collector.render_errors collector
         |> Option.value_map ~default:Lwt.return_unit ~f:Lwt_io.eprintl
       in
       Queue.iter collector.strings ~f:handler;
-      Vue.collect_from_possible_scripts collector template_script ~on_string:handler)
+      Vue.collect_from_possible_scripts collector traversal.template_script ~on_string:handler)
 
-let rec traverse ~root counts strings ({ template_script; slow_pug; _ } as options) directory =
-  let* entries =
-    Lwt_pool.use pool (fun () -> Lwt_unix.files_of_directory directory |> Lwt_stream.to_list)
-  in
-  Lwt_list.iter_p
-    (function
-      | "node_modules" -> Lwt.return_unit
-      | filename when String.is_prefix ~prefix:"." filename -> Lwt.return_unit
-      | filename -> (
-        let path = sprintf "%s/%s" directory filename in
-        Lwt_unix.lstat path >>= fun stat ->
-        match stat, lazy (String.slice filename (-4) 0), lazy (String.slice filename (-3) 0) with
-        | { st_kind = S_REG; _ }, _, (lazy ".js") when String.is_suffix ~suffix:".js" filename ->
-          process_file ~root strings counts.js path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~path in
-              let+ source = Lwt_io.read ic in
-              Parsing.Js.extract_to_collector collector source;
-              collector)
-        | { st_kind = S_REG; _ }, _, (lazy ".ts") ->
-          process_file ~root strings counts.ts path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~path in
-              let* source = Lwt_io.read ic in
-              let+ () = Quickjs.extract_to_collector collector Typescript source in
-              collector)
-        | { st_kind = S_REG; _ }, (lazy ".vue"), _ ->
-          process_file ~root strings counts.vue path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~path in
-              let* languages = Vue.parse ~path ~slow_pug ic in
-              let+ () = Vue.collect_from_languages collector languages in
-              collector)
-        | { st_kind = S_REG; _ }, (lazy ".pug"), _ ->
-          process_file ~root strings counts.pug path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~path in
-              let* source = Lwt_io.read ic in
-              let slow_parse () = Quickjs.extract_to_collector collector Pug source in
-              let+ () =
-                match slow_pug with
-                | true -> slow_parse ()
-                | false ->
-                  let on_ok parsed =
-                    Parsing.Pug.collect collector parsed;
-                    Lwt.return_unit
-                  in
-                  let on_error ~msg:_ = slow_parse () in
-                  Parsing.Basic.exec_parser ~on_ok ~on_error Parsing.Pug.parser ~path ~language_name:"Pug"
-                    source
-              in
-              collector)
-        | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".html" ->
-          process_file ~root strings counts.html path template_script ~f:(fun ic ->
-              let collector = Utils.Collector.create ~path in
-              let on_ok parsed =
-                Parsing.Html.collect collector parsed;
-                Lwt.return collector
-              in
-              Parsing.Basic.exec_parser_lwt ~on_ok Parsing.Html.parser ~path ~language_name:"HTML" ic)
-        | { st_kind = S_DIR; _ }, _, _ -> traverse ~root counts strings options path
-        | _ -> Lwt.return_unit))
-    entries
+let rec process_dir traversal ~path = function
+| "node_modules" -> Lwt.return_unit
+| filename when String.is_prefix ~prefix:"." filename -> Lwt.return_unit
+| filename -> (
+  Lwt_unix.lstat path >>= fun stat ->
+  match stat, lazy (String.slice filename (-4) 0), lazy (String.slice filename (-3) 0) with
+  | { st_kind = S_REG; _ }, _, (lazy ".js") when String.is_suffix ~suffix:".js" filename ->
+    process_file traversal traversal.counts.js path ~f:(fun ic ->
+        let collector = Utils.Collector.create ~path in
+        let+ source = Lwt_io.read ic in
+        Parsing.Js.extract_to_collector collector source;
+        collector)
+  | { st_kind = S_REG; _ }, _, (lazy ".ts") ->
+    process_file traversal traversal.counts.ts path ~f:(fun ic ->
+        let collector = Utils.Collector.create ~path in
+        let* source = Lwt_io.read ic in
+        let+ () = Quickjs.extract_to_collector collector Typescript source in
+        collector)
+  | { st_kind = S_REG; _ }, (lazy ".vue"), _ ->
+    process_file traversal traversal.counts.vue path ~f:(fun ic ->
+        let collector = Utils.Collector.create ~path in
+        let* languages = Vue.parse ~path ~slow_pug:traversal.slow_pug ic in
+        let+ () = Vue.collect_from_languages collector languages in
+        collector)
+  | { st_kind = S_REG; _ }, (lazy ".pug"), _ ->
+    process_file traversal traversal.counts.pug path ~f:(fun ic ->
+        let collector = Utils.Collector.create ~path in
+        let* source = Lwt_io.read ic in
+        let slow_parse () = Quickjs.extract_to_collector collector Pug source in
+        let+ () =
+          match traversal.slow_pug with
+          | true -> slow_parse ()
+          | false ->
+            let on_ok parsed =
+              Parsing.Pug.collect collector parsed;
+              Lwt.return_unit
+            in
+            let on_error ~msg:_ = slow_parse () in
+            Parsing.Basic.exec_parser ~on_ok ~on_error Parsing.Pug.parser ~path ~language_name:"Pug"
+              source
+        in
+        collector)
+  | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".html" ->
+    process_file traversal traversal.counts.html path ~f:(fun ic ->
+        let collector = Utils.Collector.create ~path in
+        let on_ok parsed =
+          Parsing.Html.collect collector parsed;
+          Lwt.return collector
+        in
+        Parsing.Basic.exec_parser_lwt ~on_ok Parsing.Html.parser ~path ~language_name:"HTML" ic)
+  | { st_kind = S_DIR; _ }, _, _ -> traverse traversal path
+  | _ -> Lwt.return_unit)
+
+and traverse traversal directory =
+  Lwt_pool.use pool (fun () -> Lwt_unix.files_of_directory directory |> Lwt_stream.to_list)
+  >>= Lwt_list.iter_p (fun entry ->
+          let path = Filename.concat directory entry in
+          process_dir traversal ~path entry)
 
 let fmt s = Yojson.Basic.to_string (`String s)
 
@@ -133,14 +137,14 @@ let json_pair left right first =
     else ",")
     left right
 
-let write_english english =
-  let time = Utils.time () in
-  let path_strings = "strings/english.strings" in
-  let path_json = "strings/english.json" in
+let write_english ~outdir english =
+  let time = Utils.Timing.start () in
+  let path_strings = Filename.concat outdir "english.strings" in
+  let path_json = Filename.concat outdir "english.json" in
   let first = ref true in
   let* () =
-    Lwt_io.with_file ~flags:write_flags ~mode:Output path_strings (fun oc_strings ->
-        Lwt_io.with_file ~flags:write_flags ~mode:Output path_json (fun oc_json ->
+    Lwt_io.with_file ~flags:Utils.Io.write_flags ~mode:Output path_strings (fun oc_strings ->
+        Lwt_io.with_file ~flags:Utils.Io.write_flags ~mode:Output path_json (fun oc_json ->
             let* () = Lwt.join [ Lwt_io.write oc_strings header; Lwt_io.write_char oc_json '{' ] in
             let* () =
               (* Switch to a map to preserve order as much as possible and therefore reduce merge conflicts *)
@@ -159,15 +163,15 @@ let write_english english =
   in
   Lwt_io.printlf
     !"✅ [%{Int63}ms] Generated '%s' and '%s' with:\n- %d unique strings\n"
-    (time ()) path_strings path_json (String.Table.length english)
+    (time `Stop) path_strings path_json (String.Table.length english)
 
-let write_other ~language english other =
-  let time = Utils.time () in
-  let path_strings = sprintf "strings/%s.strings" language in
-  let path_json = sprintf "strings/%s.json" language in
+let write_other ~outdir ~language english other =
+  let time = Utils.Timing.start () in
+  let path_strings = Filename.concat outdir (sprintf "%s.strings" language) in
+  let path_json = Filename.concat outdir (sprintf "%s.json" language) in
   let* n_left, n_right, n_both =
-    Lwt_io.with_file ~flags:write_flags ~mode:Output path_strings (fun oc_strings ->
-        Lwt_io.with_file ~flags:write_flags ~mode:Output path_json (fun oc_json ->
+    Lwt_io.with_file ~flags:Utils.Io.write_flags ~mode:Output path_strings (fun oc_strings ->
+        Lwt_io.with_file ~flags:Utils.Io.write_flags ~mode:Output path_json (fun oc_json ->
             let english_only = ref String.Map.empty in
             let other_only = ref String.Map.empty in
             let both = ref String.Map.empty in
@@ -221,30 +225,15 @@ let write_other ~language english other =
       - %d new strings\n\
       - %d existing strings\n\
       - %d unused strings\n"
-    (time ()) path_strings path_json n_left n_both n_right
+    (time `Stop) path_strings path_json n_left n_both n_right
 
-let directory_exists path =
-  let+ stat = Lwt_unix.stat path in
-  match stat with
-  | { st_kind = S_DIR; _ } -> true
-  | { st_kind = _; _ } -> failwithf "%s already exists, but is not a directory" path ()
-  | exception _ -> false
-
-let handle_system_failure = function
-| (Failure _ as ex)
- |(Core_unix.Unix_error _ as ex)
- |(Exn.Reraised _ as ex) ->
-  let message = Utils.Exception.human ex in
-  let* () = Lwt_io.write_line Lwt_io.stderr (sprintf "❌ An error occured:\n%s" message) in
-  exit 1
-| exn -> raise exn
-
-let main ({ targets; template_script; slow_pug } as options) = function
+let main options = function
 | Debug lang ->
   Lwt_list.iter_s
     (fun path ->
       let* () = Lwt_io.printlf "\n>>> Debugging [%s]" path in
-      Lwt_io.with_file ~flags:read_flags ~mode:Input path (fun ic ->
+      let ({ slow_pug; template_script; _ } : common_options) = options in
+      Lwt_io.with_file ~flags:Utils.Io.read_flags ~mode:Input path (fun ic ->
           match lang, String.slice path (-4) 0 with
           | _, ".vue" ->
             let* languages = Vue.parse ~path ~slow_pug ic in
@@ -273,47 +262,56 @@ let main ({ targets; template_script; slow_pug } as options) = function
             in
             Parsing.Basic.exec_parser_lwt ~on_ok Parsing.Html.parser ~path ~language_name:"Pug" ic
           | _ -> Lwt_io.printlf "Nothing to do for file [%s]" path))
-    targets
+    options.targets
 | Run ->
-  let overall_time = Utils.time () in
+  let overall_time = Utils.Timing.start () in
+  let outdir = options.outdir in
   (* Check current directory *)
   let* strings_dir_files =
-    let git_dir_p = directory_exists ".git" in
-    let strings_dir_p = directory_exists "strings" in
+    let git_dir_p = Utils.Io.directory_exists ".git" in
+    let strings_dir_p = Utils.Io.directory_exists outdir in
     let* git_dir = git_dir_p in
     let* strings_dir = strings_dir_p in
     if not (git_dir || strings_dir) then failwith "This program must be run from the root of your project";
     match strings_dir with
-    | true -> Lwt_unix.files_of_directory "strings" |> Lwt_stream.to_list
+    | true -> Lwt_unix.files_of_directory outdir |> Lwt_stream.to_list
     | false ->
-      let+ () = Lwt_unix.mkdir "strings" 0o751 in
+      let+ () = Utils.Io.mkdir_p ~dir_name:outdir ~perms:0o751 in
       []
   in
   (* English *)
   let* english =
-    let english_list = String.Table.create () in
+    let table = String.Table.create () in
     let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0 } in
-    let time = Utils.time () in
+    let time = Utils.Timing.start () in
     let* () =
       Lwt_list.iter_p
         (fun directory ->
-          let root = String.chop_suffix ~suffix:"/" directory |> Option.value ~default:directory in
-          traverse ~root:(sprintf "%s/" root) counts english_list options root)
-        targets
+          let root = String.chop_suffix_if_exists ~suffix:"/" directory in
+          let traversal =
+            {
+              rootlen = String.length root + 1;
+              table;
+              template_script = options.template_script;
+              slow_pug = options.slow_pug;
+              counts;
+            }
+          in
+          traverse traversal root)
+        options.targets
     in
     let english =
-      String.Table.map english_list ~f:(fun set ->
-          String.Set.to_array set |> String.concat_array ~sep:", ")
+      String.Table.map table ~f:(fun set -> String.Set.to_array set |> String.concat_array ~sep:", ")
     in
     let* () =
       let f ext i = sprintf "%d %s file%s" i ext (plural i) in
-      let time = Int63.(time () - !Quickjs.init_time) in
+      let time = Int63.(time `Stop - !Quickjs.init_time) in
       Lwt_io.printlf
         !"✅ [%{Int63}ms] Processed %s, %s, %s, %s, and %s"
         time (f ".js" !(counts.js)) (f ".ts" !(counts.ts)) (f ".html" !(counts.html))
         (f ".vue" !(counts.vue)) (f ".pug" !(counts.pug))
     in
-    let+ () = write_english english in
+    let+ () = write_english ~outdir english in
     english
   in
   (* Other languages *)
@@ -323,34 +321,39 @@ let main ({ targets; template_script; slow_pug } as options) = function
         match String.chop_suffix ~suffix:".strings" filename with
         | Some "english" -> Lwt.return_unit
         | Some language -> (
-          let path = sprintf "strings/%s" filename in
+          let path = Filename.concat outdir filename in
           Lwt_unix.stat path >>= function
           | { st_kind = S_REG; _ } ->
             let* other =
-              Lwt_io.with_file ~mode:Input ~flags:read_flags path (Parsing.Strings.parse ~path)
+              Lwt_io.with_file ~mode:Input ~flags:Utils.Io.read_flags path (Parsing.Strings.parse ~path)
             in
-            write_other ~language english other
+            write_other ~outdir ~language english other
           | _ -> Lwt.return_unit)
         | None -> Lwt.return_unit)
       strings_dir_files
   in
-  Lwt_io.write_line Lwt_io.stdout (sprintf !"Completed. (%{Int63}ms)" (overall_time ()))
+  Lwt_io.write_line Lwt_io.stdout (sprintf !"Completed. (%{Int63}ms)" (overall_time `Stop))
 
 let () =
   let open Command in
   let open Command.Let_syntax in
   let common =
-    let%map_open targets = Param.("path" %: string |> sequence |> anon)
+    let%map_open targets = "path" %: string |> sequence |> anon
+    and outdir =
+      flag_optional_with_default_doc "--output" ~aliases:[ "-o" ] ~full_flag_required:() string
+        [%sexp_of: string] ~default:"strings" ~doc:"DIR Change default output directory"
     and use_ts =
       flag "--ts" ~full_flag_required:() no_arg
-        ~doc:"Interpret HTML/Pug templates as containing TypeScript"
+        ~doc:
+          "Use this option if your HTML/Pug files use TypeScript as their scripting language in element \
+           attributes like onClick=\"\""
     and slow_pug =
       flag "--slow-pug" ~aliases:[ "--sp" ] ~full_flag_required:() no_arg
         ~doc:
           "Use the official Pug parser. Much slower, especially on large files. Use this option if any \
            translation seems to be missing from a Pug file, and report the bug if this option fixes it."
     in
-    { targets; template_script = (if use_ts then TS else JS); slow_pug }
+    { outdir; targets; template_script = (if use_ts then TS else JS); slow_pug }
   in
   let action =
     let open Param in
@@ -365,6 +368,16 @@ let () =
       >>| Fn.flip Option.some_if (Debug Html)
     in
     choose_one [ debug_pug; debug_html ] ~if_nothing_chosen:(Default_to Run)
+  in
+
+  let handle_system_failure = function
+    | (Failure _ as ex)
+     |(Core_unix.Unix_error _ as ex)
+     |(Exn.Reraised _ as ex) ->
+      let message = Utils.Exception.human ex in
+      let* () = Lwt_io.write_line Lwt_io.stderr (sprintf "❌ An error occured:\n%s" message) in
+      exit 1
+    | exn -> raise exn
   in
 
   Param.both common action

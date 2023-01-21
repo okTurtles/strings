@@ -15,16 +15,16 @@ external stub_init_contexts : int -> (unit, string) Result.t = "stub_init_contex
 external stub_extract : int -> string -> fn_name:string -> (string array * string array, string) Result.t
   = "stub_extract"
 
-let num_threads = 1
+let num_threads = 4
 
 let init_time = ref Int63.zero
 
 let init_contexts =
   lazy
-    (let time = Utils.time () in
+    (let time = Utils.Timing.start () in
      Lwt_preemptive.detach (fun () -> stub_init_contexts num_threads) () >>= function
      | Ok () ->
-       let time = time () in
+       let time = time `Stop in
        init_time := time;
        Lwt_io.printlf
          !"✅ [%{Int63}ms] Initialized %d JS runtimes for TS and/or Pug processing"
@@ -38,6 +38,7 @@ let js_contexts =
       incr ctr;
       Lwt.return i)
 
+(* Re-indent from 0 if base indent is greater than 0 *)
 let clean_pug code =
   let rec next i =
     match String.index_from code i '\n' with
@@ -53,7 +54,7 @@ let clean_pug code =
          match String.lfindi s ~f:(fun _i c -> Char.(c <> ' ')) with
          | None as x -> x
          | Some indent ->
-           let is_comment = String.( = ) (String.sub code ~pos:indent ~len:2) "//" in
+           let is_comment = String.is_substring_at code ~pos:indent ~substring:"//" in
            Some (indent, is_comment, s)))
   |> Sequence.fold_until ~init:None ~finish:(Option.value ~default:0) ~f:(fun in_comment data ->
          match in_comment, data with

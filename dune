@@ -1,4 +1,4 @@
-(data_only_dirs node_modules)
+(data_only_dirs node_modules quickjs)
 (env
   (dev
     (flags (:standard -warn-error -A))
