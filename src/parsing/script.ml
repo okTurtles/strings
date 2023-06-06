@@ -5,7 +5,7 @@ type raw =
   | TS of string
 [@@deriving sexp, yojson]
 
-let boundaries =
+let boundaries () =
   let open Angstrom in
   let starts, ends = Basic.boundary_parsers "script" in
   let starts =

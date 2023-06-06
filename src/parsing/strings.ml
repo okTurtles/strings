@@ -4,15 +4,14 @@ type line =
   | Translation of (string * string)
   | Comment
 
-let parser =
+let parser ~dq_string =
   let open Angstrom in
   let open Basic in
-  let double_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'"' in
   let line =
     lift2
       (fun x y -> Translation (x, y))
-      (mlws *> double_quoted_string <* mlws <* char '=')
-      (mlws *> double_quoted_string <* mlws <* char ';' <* mlws)
+      (mlws *> dq_string <* mlws <* char '=')
+      (mlws *> dq_string <* mlws <* char ';' <* mlws)
   in
   let comment =
     (mlws
@@ -44,9 +43,10 @@ let parse ~path ic =
       (String.take_while ~f:(Char.( <> ) '\n') unparsed)
       ()
   in
+  let dq_string = Basic.make_dq_string () in
   let+ lines =
-    Basic.exec_parser_lwt ~on_ok:Lwt.return ~on_error:error_handler parser ~path ~language_name:".strings"
-      ic
+    Basic.exec_parser_lwt ~on_ok:Lwt.return ~on_error:error_handler (parser ~dq_string) ~path
+      ~language_name:".strings" ic
   in
   List.iter lines ~f:(function
     | Translation (x, y) -> String.Table.set table ~key:x ~data:y

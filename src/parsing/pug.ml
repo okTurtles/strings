@@ -84,7 +84,7 @@ let rollup (lines : lines) =
   let lvl = List.hd lines |> Option.value_map ~default:0 ~f:fst in
   loop lvl [] None lines |> fst3 |> Array.of_list_rev
 
-let parser =
+let parser Basic.{ sq_string; dq_string } =
   let open Angstrom in
   let open Basic in
   let comments = string "//" *> skip_remaining in
@@ -93,10 +93,8 @@ let parser =
   let mlblank = sep_by comments mlws in
   let mlblank1 = sep_by1 comments mlws1 in
   let pug_string =
-    let single_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'\'' in
-    let double_quoted_string = escapable_string_parser ~escape:'\\' ~separator:'"' in
     let unquoted_string = take_while1 is_identifier in
-    choice [ single_quoted_string; double_quoted_string; unquoted_string ]
+    choice [ sq_string; dq_string; unquoted_string ]
   in
   let symbols ll = ll |> List.map ~f:string |> choice in
 

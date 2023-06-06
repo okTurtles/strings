@@ -54,7 +54,7 @@ let escapable_string_parser ~escape ~separator =
   let is_separator = Char.( = ) separator in
   let is_escape = Char.( = ) escape in
   let buf = Buffer.create 50 in
-  (char separator
+  char separator
   *>
   let rec loop escaping =
     any_char >>= fun x ->
@@ -74,12 +74,25 @@ let escapable_string_parser ~escape ~separator =
       Buffer.add_char buf c;
       loop escaping
   in
-  loop false)
-  <?> "Escapable string"
+  loop false
+  <|> ( return () >>= fun () ->
+        Buffer.clear buf;
+        fail "Invalid escapable string" )
+
+let make_sq_string () = escapable_string_parser ~escape:'\\' ~separator:'\''
+
+let make_dq_string () = escapable_string_parser ~escape:'\\' ~separator:'"'
+
+type string_parsers = {
+  sq_string: string Angstrom.t;
+  dq_string: string Angstrom.t;
+}
+
+let make_string_parsers () = { sq_string = make_sq_string (); dq_string = make_dq_string () }
 
 let boundary_parsers tag =
-  let sq_string = escapable_string_parser ~escape:'\\' ~separator:'\'' in
-  let dq_string = escapable_string_parser ~escape:'\\' ~separator:'"' in
+  let sq_string = make_sq_string () in
+  let dq_string = make_dq_string () in
   let quoted_string =
     peek_char >>= function
     | Some '\'' -> sq_string
@@ -96,7 +109,8 @@ let boundary_parsers tag =
   let ends = string "</" *> mlws *> string tag <* mlws <* char '>' in
   starts, ends
 
-let block_parser (starts, ends) buf ~f =
+let block_parser boundaries buf ~f =
+  let starts, ends = boundaries () in
   let line =
     take_remaining <* advance 1 >>| fun src_line ->
     Buffer.add_string buf src_line;

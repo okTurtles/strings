@@ -33,8 +33,7 @@ module Language = struct
   | Template (Template.HTML source) ->
     let on_ok parsed = Html { parsed; length = Some (String.length source) } in
     let on_error ~msg = Failed msg in
-    Parsing.Basic.exec_parser ~on_ok ~on_error Parsing.Html.parser ~path ~language_name:"HTML" source
-    |> Lwt.return
+    Basic.exec_parser ~on_ok ~on_error Html.parser ~path ~language_name:"HTML" source |> Lwt.return
   | Template (Template.PUG source) -> (
     let slow_parse () =
       let collector = Utils.Collector.create ~path in
@@ -46,7 +45,9 @@ module Language = struct
     | false ->
       let on_ok parsed = Pug_native { parsed; length = Some (String.length source) } |> Lwt.return in
       let on_error ~msg:_ = slow_parse () in
-      Basic.exec_parser ~on_ok ~on_error Pug.parser ~path ~language_name:"Pug" source)
+      Basic.exec_parser ~on_ok ~on_error
+        (Pug.parser (Basic.make_string_parsers ()))
+        ~path ~language_name:"Pug" source)
   | Script (Script.JS s) -> Js s |> Lwt.return
   | Script (Script.TS s) -> Ts s |> Lwt.return
   | Style (Style.CSS s) -> Css (String.length s) |> Lwt.return

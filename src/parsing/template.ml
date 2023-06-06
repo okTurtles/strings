@@ -5,7 +5,7 @@ type raw =
   | PUG  of string
 [@@deriving sexp, yojson]
 
-let boundaries =
+let boundaries () =
   let open Angstrom in
   let starts, ends = Basic.boundary_parsers "template" in
   let starts =
