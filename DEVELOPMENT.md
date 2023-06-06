@@ -27,6 +27,15 @@ mv quickjs-2021-03-27 quickjs
 cd quickjs && make && cd -
 ```
 
+### MacOS - Development
+```sh
+# Build
+dune build src/cli/strings.exe -w
+
+# Run (separate terminal)
+cp _build/default/src/cli/strings.exe strings.mac && ./strings.mac
+```
+
 ### MacOS - Build & Run
 ```sh
 # Don't forget to update the version number in [strings.ml]
