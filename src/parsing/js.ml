@@ -7,7 +7,7 @@ let errors_to_string errors =
       when sl = el ->
       bprintf buf "Line %d (%d-%d): %s\n" sl sc ec (Parse_error.PP.error err)
     | Loc.{ source = _; start = { line = sl; column = sc }; _end = { line = el; column = ec } }, err ->
-      bprintf buf "Line %d (%d) to line %d (%d): %s\n" sl sc el ec (Parse_error.PP.error err));
+      bprintf buf "Line %d (%d) to line %d (%d): %s\n" sl sc el ec (Parse_error.PP.error err) );
   Buffer.contents buf
 
 let parse_error = function
@@ -17,9 +17,9 @@ let parse_error = function
 
 let debug statements =
   sprintf "Statements: %s"
-    (List.map statements ~f:(fun stmt ->
-         Format.asprintf "%a" (Flow_ast.Statement.pp (fun _ _ -> ()) (fun _ _ -> ())) stmt)
-    |> String.concat ~sep:", ")
+    ( List.map statements ~f:(fun stmt ->
+        Format.asprintf "%a" (Flow_ast.Statement.pp (fun _ _ -> ()) (fun _ _ -> ())) stmt )
+    |> String.concat ~sep:", " )
   |> print_endline
 
 let parse_options = Some { Parser_env.default_parse_options with esproposal_export_star_as = true }
@@ -29,20 +29,21 @@ let parse ~path source =
   | _, (_ :: _ as errors) -> Error (lazy (errors_to_string errors))
   | ast, [] -> (
     match ast with
-    | _, Flow_ast.Program.{ statements; comments = _; all_comments = _ } -> Ok statements)
+    | _, Flow_ast.Program.{ statements; comments = _; all_comments = _ } -> Ok statements )
   | exception Parse_error.Error (_, (_ :: _ as errors)) -> Error (lazy (parse_error (First errors)))
   | exception Parse_error.Error (_, []) -> Error (lazy (parse_error (Second "Syntax error")))
   | exception exn ->
     Error
-      (lazy
-        (sprintf "Unexpected error in %s: %s\nPlease report this bug." path (Utils.Exception.human exn)))
+      ( lazy
+        (sprintf "Unexpected error in %s: %s\nPlease report this bug." path (Utils.Exception.human exn))
+        )
 
 let unescape source =
   match parse ~path:"attribute" source with
   | Ok stmts -> (
     match Js_ast.unescape stmts with
     | Some s -> s
-    | None -> source)
+    | None -> source )
   | Error _ -> source
 
 let extract source ~on_string =

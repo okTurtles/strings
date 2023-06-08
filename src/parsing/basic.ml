@@ -145,7 +145,7 @@ let exec_parser ~on_ok ?on_error parser ~path ~language_name raw =
   | Error msg -> (
     match on_error with
     | None -> default_syntax_error_handler ~path ~language_name ~msg
-    | Some handler -> handler ~msg)
+    | Some handler -> handler ~msg )
 
 let exec_parser_lwt ~on_ok ?on_error parser ~path ~language_name ic =
   let open Lwt.Infix in
@@ -155,4 +155,4 @@ let exec_parser_lwt ~on_ok ?on_error parser ~path ~language_name ic =
     let unparsed = Bigstringaf.substring buf ~off ~len in
     match on_error with
     | None -> default_error_handler ~path ~language_name ~unparsed
-    | Some handler -> handler ~unparsed (Result.ok result))
+    | Some handler -> handler ~unparsed (Result.ok result) )

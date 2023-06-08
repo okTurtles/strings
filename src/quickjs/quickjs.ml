@@ -29,14 +29,14 @@ let init_contexts =
        Lwt_io.printlf
          !"✅ [%{Int63}ms] Initialized %d JS runtimes for TS and/or Pug processing"
          time num_threads
-     | Error msg -> failwith msg)
+     | Error msg -> failwith msg )
 
 let js_contexts =
   let ctr = ref 0 in
   Lwt_pool.create num_threads (fun () ->
-      let i = !ctr in
-      incr ctr;
-      Lwt.return i)
+    let i = !ctr in
+    incr ctr;
+    Lwt.return i )
 
 (* Re-indent from 0 if base indent is greater than 0 *)
 let clean_pug code =
@@ -47,7 +47,7 @@ let clean_pug code =
   in
   Sequence.of_seq (fun () -> next 0)
   |> Sequence.folding_map ~init:0 ~f:(fun start stop ->
-         stop, if stop > 0 then String.slice code (start + 1) stop else "")
+       stop, if stop > 0 then String.slice code (start + 1) stop else "" )
   |> Sequence.filter_map ~f:(function
        | "" -> None
        | s -> (
@@ -55,14 +55,14 @@ let clean_pug code =
          | None as x -> x
          | Some indent ->
            let is_comment = String.is_substring_at code ~pos:indent ~substring:"//" in
-           Some (indent, is_comment, s)))
+           Some (indent, is_comment, s) ) )
   |> Sequence.fold_until ~init:None ~finish:(Option.value ~default:0) ~f:(fun in_comment data ->
-         match in_comment, data with
-         | None, (indent, true, _) -> Continue (Some indent)
-         | Some indent1, (indent2, true, _) -> Continue (Some (min indent1 indent2))
-         | Some stop, (indent, false, _) when stop <= indent -> Stop indent
-         | Some stop, (_, false, _) -> Continue (Some stop)
-         | None, (indent, false, _) -> Stop indent)
+       match in_comment, data with
+       | None, (indent, true, _) -> Continue (Some indent)
+       | Some indent1, (indent2, true, _) -> Continue (Some (min indent1 indent2))
+       | Some stop, (indent, false, _) when stop <= indent -> Stop indent
+       | Some stop, (_, false, _) -> Continue (Some stop)
+       | None, (indent, false, _) -> Stop indent )
   |> function
   | 0 -> code
   | shift -> String.substr_replace_all code ~pattern:(sprintf "\n%s" (String.make shift ' ')) ~with_:"\n"

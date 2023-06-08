@@ -14,7 +14,7 @@ let parser ~dq_string =
       (mlws *> dq_string <* mlws <* char ';' <* mlws)
   in
   let comment =
-    (mlws
+    ( mlws
     *> string "/*"
     *>
     let rec loop n =
@@ -23,7 +23,7 @@ let parser ~dq_string =
       | '/' when Int.(n = 1) -> return Comment
       | _ -> loop 0
     in
-    loop 0)
+    loop 0 )
     <* mlws
   in
   many (line <|> comment) <* mlws
@@ -50,5 +50,5 @@ let parse ~path ic =
   in
   List.iter lines ~f:(function
     | Translation (x, y) -> String.Table.set table ~key:x ~data:y
-    | Comment -> ());
+    | Comment -> () );
   table

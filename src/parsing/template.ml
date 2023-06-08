@@ -2,7 +2,7 @@ open! Core
 
 type raw =
   | HTML of string
-  | PUG  of string
+  | PUG of string
 [@@deriving sexp, yojson]
 
 let boundaries () =
@@ -13,7 +13,7 @@ let boundaries () =
     List.find_map attrs ~f:(function
       | "lang", Some "html" -> Some `HTML
       | "lang", Some "pug" -> Some `PUG
-      | _ -> None)
+      | _ -> None )
   in
   starts, ends
 
@@ -22,4 +22,4 @@ let parser buf =
     | None
      |Some `HTML ->
       HTML raw
-    | Some `PUG -> PUG raw)
+    | Some `PUG -> PUG raw )

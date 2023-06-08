@@ -10,10 +10,11 @@ src/flow_parser
 src/prototype
 *.strings
 *.exe
-*.mac
+*.mac*
 *.linux
 *.tar.gz
 strings/
+strings-backup/
 lib/
 flow/
 test/

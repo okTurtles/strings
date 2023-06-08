@@ -27,7 +27,7 @@ let mkdir_p ~dir_name ~perms =
              | true -> Lwt.return path
              | false ->
                let+ () = Lwt_unix.mkdir path perms in
-               path))
+               path ))
          ""
   in
   ()

@@ -5,7 +5,7 @@ From the root of the repo:
 ```sh
 brew install opam libomp mold
 
-opam switch create . ocaml-variants.4.14.0+options --no-install
+opam switch create . ocaml-variants.5.0.0+options --no-install
 opam install . --deps-only -t
 
 # Remove old Flow version

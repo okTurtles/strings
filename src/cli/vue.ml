@@ -6,15 +6,15 @@ open Parsing
 module Source = struct
   type t =
     | Template of Template.raw
-    | Script   of Script.raw
-    | Style    of Style.raw
+    | Script of Script.raw
+    | Style of Style.raw
 end
 
 module Language = struct
   type t =
-    | Js         of string
-    | Ts         of string
-    | Html       of {
+    | Js of string
+    | Ts of string
+    | Html of {
         parsed: Html.t;
         length: int option;
       }
@@ -22,12 +22,12 @@ module Language = struct
         parsed: Pug.t;
         length: int option;
       }
-    | Pug        of {
+    | Pug of {
         collector: Utils.Collector.t;
         length: int;
       }
-    | Css        of int
-    | Failed     of string
+    | Css of int
+    | Failed of string
 
   let of_source ~path ~slow_pug : Source.t -> t Lwt.t = function
   | Template (Template.HTML source) ->
@@ -47,7 +47,7 @@ module Language = struct
       let on_error ~msg:_ = slow_parse () in
       Basic.exec_parser ~on_ok ~on_error
         (Pug.parser (Basic.make_string_parsers ()))
-        ~path ~language_name:"Pug" source)
+        ~path ~language_name:"Pug" source )
   | Script (Script.JS s) -> Js s |> Lwt.return
   | Script (Script.TS s) -> Ts s |> Lwt.return
   | Style (Style.CSS s) -> Css (String.length s) |> Lwt.return
@@ -65,15 +65,15 @@ end
 
 let collect_from_possible_scripts Utils.Collector.{ possible_scripts; _ } template_script ~on_string =
   Queue.fold possible_scripts ~init:Lwt.return_unit ~f:(fun acc raw ->
-      let* () = acc in
-      match template_script with
-      | JS ->
-        Js.extract raw ~on_string;
-        Lwt.return_unit
-      | TS -> (
-        Quickjs.extract Typescript raw >|= function
-        | Error _ -> ()
-        | Ok (strings, _) -> Array.iter strings ~f:on_string))
+    let* () = acc in
+    match template_script with
+    | JS ->
+      Js.extract raw ~on_string;
+      Lwt.return_unit
+    | TS -> (
+      Quickjs.extract Typescript raw >|= function
+      | Error _ -> ()
+      | Ok (strings, _) -> Array.iter strings ~f:on_string ) )
 
 let collect_from_languages collector languages =
   Lwt_list.iter_p
@@ -109,7 +109,7 @@ let debug_template ~path languages template_script target =
     if not (Queue.is_empty file_errors)
     then (
       bprintf buf "\n❌ %s errors in %s:\n" error_kind path;
-      Queue.iter file_errors ~f:(bprintf buf "- %s\n"));
+      Queue.iter file_errors ~f:(bprintf buf "- %s\n") );
     Lwt_io.printl (Buffer.contents buf)
   in
   Lwt_list.iter_s

@@ -13,7 +13,7 @@ let boundaries () =
     List.find_map attrs ~f:(function
       | "lang", Some "js" -> Some `JS
       | "lang", Some "ts" -> Some `TS
-      | _ -> None)
+      | _ -> None )
   in
   starts, ends
 
@@ -22,4 +22,4 @@ let parser buf =
     | None
      |Some `JS ->
       JS raw
-    | Some `TS -> TS raw)
+    | Some `TS -> TS raw )

@@ -4,8 +4,8 @@ type identifier = { parts: string list } [@@deriving yojson, sexp_of]
 
 type selector =
   | Element of identifier
-  | Class   of identifier
-  | Id      of identifier
+  | Class of identifier
+  | Id of identifier
 [@@deriving yojson, sexp_of]
 
 type argument = {
@@ -24,8 +24,8 @@ type node = {
 [@@deriving yojson, sexp_of]
 
 type line =
-  | Node    of node
-  | Text    of string list
+  | Node of node
+  | Text of string list
   | Comment of string list
 [@@deriving yojson, sexp_of]
 
@@ -41,7 +41,7 @@ let collect Utils.Collector.{ strings; possible_scripts; _ } nodes =
     | None, _ -> ());
     List.iter arguments ~f:(function
       | { contents = None; _ } -> ()
-      | { contents = Some s; _ } -> Queue.enqueue possible_scripts s);
+      | { contents = Some s; _ } -> Queue.enqueue possible_scripts s );
     Array.iter children ~f:loop
   in
   Array.iter nodes ~f:loop
@@ -106,8 +106,8 @@ let parser Basic.{ sq_string; dq_string } =
       (many
          (lift2 (sprintf "%s%s")
             (symbols [ "."; "-"; ":"; "#" ])
-            (take_while1 alphanum
-            <|> lift3 (sprintf "%c%s%c") (char '[') (take_while1 alphanum) (char ']'))))
+            ( take_while1 alphanum
+            <|> lift3 (sprintf "%c%s%c") (char '[') (take_while1 alphanum) (char ']') ) ) )
   in
   let element_selector = identifier >>| fun s -> Element s in
   let class_selector = char '.' *> identifier >>| fun x -> Class x in
@@ -127,14 +127,14 @@ let parser Basic.{ sq_string; dq_string } =
     lift3
       (fun selector arguments text -> { selector; arguments; text; children = [||] })
       (choice [ class_selector; id_selector; element_selector ])
-      (maybe (char '(' *> mlblank *> sep_by mlblank1 argument <* mlblank <* char ')')
-      >>| Option.value ~default:[])
+      ( maybe (char '(' *> mlblank *> sep_by mlblank1 argument <* mlblank <* char ')')
+      >>| Option.value ~default:[] )
       (maybe (blank *> take_remaining) >>| function
        | None
         |Some "" ->
          None
        | Some x when String.is_prefix ~prefix:"//" x -> None
-       | Some _ as x -> x)
+       | Some _ as x -> x )
   in
   let line =
     take_while is_ws >>| String.length >>= fun lvl ->
@@ -146,7 +146,7 @@ let parser Basic.{ sq_string; dq_string } =
            many (many1 end_of_line *> (indent *> take_remaining)) >>| fun ll ->
            let text = Some (String.concat ~sep:"\n" ll) in
            Node { node with text }
-         | x -> return (Node x));
+         | x -> return (Node x) );
         ( text_wrap >>= fun s ->
           let indent = at_least_indent lvl in
           many (many1 end_of_line *> (indent *> text_wrap)) >>| fun ll ->
