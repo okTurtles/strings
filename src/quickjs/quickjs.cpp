@@ -10,7 +10,7 @@ value stub_init_contexts(value v_num_threads)
   CAMLlocal2(v_ret, v_field);
   int num_threads { Int_val(v_num_threads) };
 
-  caml_enter_blocking_section();
+  caml_release_runtime_system();
 
   contexts.reserve(num_threads);
   vector<string> errors {};
@@ -43,7 +43,7 @@ value stub_init_contexts(value v_num_threads)
     }
   }
 
-  caml_leave_blocking_section();
+  caml_acquire_runtime_system();
 
   for (int i { 0 }; i < num_threads; i++) {
     if (errors[i].length() > 0) {
@@ -90,11 +90,11 @@ value stub_extract(value v_id, value v_code, value v_fn_name)
   string code { String_val(v_code), caml_string_length(v_code) };
   string fn_name { String_val(v_fn_name), caml_string_length(v_fn_name) };
 
-  caml_enter_blocking_section();
+  caml_release_runtime_system();
 
   JSContext* ctx { contexts[id] };
   if (!ctx) {
-    caml_leave_blocking_section();
+    caml_acquire_runtime_system();
     CAMLreturn (v_error_of_string(v_ret, v_field, string { "Could not find context, please report this bug." }));
   }
   JS_UpdateStackTop(JS_GetRuntime(ctx));
@@ -108,13 +108,13 @@ value stub_extract(value v_id, value v_code, value v_fn_name)
   JS_FreeValue(ctx, code_val);
 
   if (JS_IsException(ret_val)) {
-    caml_leave_blocking_section();
+    caml_acquire_runtime_system();
     v_ret = v_error_of_string(v_ret, v_field, stringify_exn(ctx));
     JS_FreeValue(ctx, ret_val);
     CAMLreturn (v_ret);
   };
 
-  caml_leave_blocking_section();
+  caml_acquire_runtime_system();
 
   v_arr1 = convert_string_array(ctx, ret_val, string { "strings" }, v_ret, v_field);
   v_arr2 = convert_string_array(ctx, ret_val, string { "possibleScripts" }, v_ret, v_field);

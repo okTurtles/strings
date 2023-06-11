@@ -20,11 +20,12 @@ depends: [
   "ocamlformat" { = "0.25.1" & with-test }
   "ocaml-lsp-server" { with-test }
 
+  "eio_main" { = "0.10" }
+  "domainslib"
+
   "angstrom"
-  "angstrom-lwt-unix"
   "core" { >= "v0.15.0" }
   "core_unix" { >= "v0.15.0" }
-  "lwt"
   "ppx_deriving"
   "ppx_deriving_yojson"
   "ppx_gen_rec"

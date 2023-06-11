@@ -6,12 +6,10 @@
     utils
 
     stdlib-shims
-    angstrom-lwt-unix
     core
     core_unix
     core_unix.command_unix
-    lwt
-    lwt.unix
+    eio_main
     ppx_deriving_yojson.runtime
   )
   (preprocess (pps

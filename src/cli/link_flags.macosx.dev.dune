@@ -1,8 +1,8 @@
 ; mold (requires `mold`) fastest
-(-cclib -fuse-ld=mold -cc clang++)
+; (-cclib -fuse-ld=mold -cc clang++)
 
 ; llvm lld (requires `llvm`) 20% faster than the default
-; (-cclib -fuse-ld=/usr/local/opt/llvm/bin/ld64.lld -cc clang++)
+(-cclib -fuse-ld=/usr/local/opt/llvm/bin/ld64.lld -cc clang++)
 
 ; system default
 ; ()

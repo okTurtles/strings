@@ -40,7 +40,8 @@ val boundary_parsers : string -> (string, string option) Core.Tuple2.t list Angs
 val block_parser :
   (unit -> 'a Angstrom.t * 'b Angstrom.t) -> Buffer.t -> f:(string -> 'a -> 'c) -> 'c Angstrom.t
 
-val default_error_handler : path:string -> language_name:string -> unparsed:string -> 'a
+val default_error_handler :
+  path:string -> language_name:string -> ?unparsed:string -> msg:string -> unit -> 'a
 
 val default_syntax_error_handler : path:string -> language_name:string -> msg:string -> 'a
 
@@ -53,11 +54,11 @@ val exec_parser :
   string ->
   'b
 
-val exec_parser_lwt :
-  on_ok:('a -> 'b Lwt.t) ->
-  ?on_error:(unparsed:string -> 'a option -> 'b Lwt.t) ->
+val exec_parser_eio :
+  on_ok:('a -> 'b) ->
+  ?on_error:(?unparsed:string -> msg:string -> unit -> 'b) ->
   'a Angstrom.t ->
   path:string ->
   language_name:string ->
-  Lwt_io.input_channel ->
-  'b Lwt.t
+  #Eio.Flow.source ->
+  'b

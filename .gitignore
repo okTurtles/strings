@@ -9,6 +9,7 @@ quickjs/
 src/flow_parser
 src/prototype
 *.strings
+*.txt
 *.exe
 *.mac*
 *.linux

@@ -1,6 +1,5 @@
 open! Core
-open Lwt.Infix
-open Lwt.Syntax
+open Eio.Std
 
 type kind =
   | Typescript
@@ -15,28 +14,54 @@ external stub_init_contexts : int -> (unit, string) Result.t = "stub_init_contex
 external stub_extract : int -> string -> fn_name:string -> (string array * string array, string) Result.t
   = "stub_extract"
 
-let num_threads = 4
+module Pool : sig
+  type t
 
-let init_time = ref Int63.zero
+  val create : int -> t
+
+  val with_pool : t -> f:(int -> 'a) -> 'a
+end = struct
+  type t = int Eio.Stream.t
+
+  let create n =
+    let stream = Eio.Stream.create n in
+    for i = 0 to n - 1 do
+      Eio.Stream.add stream i
+    done;
+    stream
+
+  let with_pool stream ~f =
+    let id = Eio.Stream.take stream in
+    let result =
+      try f id with
+      | exn ->
+        Eio.Stream.add stream id;
+        raise exn
+    in
+    Eio.Stream.add stream id;
+    result
+end
+
+let init_time = Atomic.make Int63.zero
 
 let init_contexts =
-  lazy
-    (let time = Utils.Timing.start () in
-     Lwt_preemptive.detach (fun () -> stub_init_contexts num_threads) () >>= function
-     | Ok () ->
-       let time = time `Stop in
-       init_time := time;
-       Lwt_io.printlf
-         !"✅ [%{Int63}ms] Initialized %d JS runtimes for TS and/or Pug processing"
-         time num_threads
-     | Error msg -> failwith msg )
+  let initialized = Atomic.make None in
+  let p, w = Promise.create () in
+  let cell = Some p in
+  fun () ->
+    if Atomic.compare_and_set initialized None cell
+    then (
+      let time = Utils.Timing.start () in
+      Utils.Io.run_in_pool (fun () -> stub_init_contexts Utils.Io.num_threads) () |> Result.ok_or_failwith;
 
-let js_contexts =
-  let ctr = ref 0 in
-  Lwt_pool.create num_threads (fun () ->
-    let i = !ctr in
-    incr ctr;
-    Lwt.return i )
+      let time = time `Stop in
+      Atomic.set init_time time;
+      Promise.resolve w (Pool.create Utils.Io.num_threads);
+      print_endline
+        (sprintf
+           !"✅ [%{Int63}ms] Initialized %d JS runtimes for TS and/or Pug processing\n"
+           time Utils.Io.num_threads ) );
+    p
 
 (* Re-indent from 0 if base indent is greater than 0 *)
 let clean_pug code =
@@ -68,17 +93,17 @@ let clean_pug code =
   | shift -> String.substr_replace_all code ~pattern:(sprintf "\n%s" (String.make shift ' ')) ~with_:"\n"
 
 let extract kind code =
-  let* () = force init_contexts in
+  let pool = Promise.await (init_contexts ()) in
   let code =
     match kind with
     | Typescript -> code
     | Pug -> clean_pug code
   in
   let fn_name = fn_name_of_kind kind in
-  Lwt_pool.use js_contexts (fun id -> Lwt_preemptive.detach (fun () -> stub_extract id code ~fn_name) ())
+  Pool.with_pool pool ~f:(Utils.Io.run_in_pool (fun id -> stub_extract id code ~fn_name))
 
 let extract_to_collector (collector : Utils.Collector.t) kind code =
-  extract kind code >|= function
+  match extract kind code with
   | Error msg -> Queue.enqueue collector.file_errors msg
   | Ok (strings, possible_scripts) ->
     Array.iter strings ~f:(Queue.enqueue collector.strings);

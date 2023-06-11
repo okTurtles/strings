@@ -2,8 +2,6 @@
   (name parsing)
   (libraries
     core
-    angstrom-lwt-unix
-    lwt
     SZXX
 
     utils

@@ -28,25 +28,25 @@ let parser ~dq_string =
   in
   many (line <|> comment) <* mlws
 
-let parse ~path ic =
-  let open Lwt.Syntax in
+let parse ~path flow =
   let table = String.Table.create () in
 
-  let error_handler ~unparsed _opt =
+  let error_handler ?unparsed ~msg () =
+    let preview =
+      match unparsed with
+      | None -> ""
+      | Some s -> sprintf "\nThis line is malformed:\n%s" (String.take_while ~f:(Char.( <> ) '\n') s)
+    in
     failwithf
-      "There is a syntax error in file [%s].\n\
+      "There is a syntax error in file [%s] (%s).\n\
        Translations must follow this format and end in a semicolon: \"english text\" = \"translated \
-       text\";\n\
-       This line is malformed:\n\
-       %s"
-      path
-      (String.take_while ~f:(Char.( <> ) '\n') unparsed)
-      ()
+       text\";%s"
+      path msg preview ()
   in
   let dq_string = Basic.make_dq_string () in
-  let+ lines =
-    Basic.exec_parser_lwt ~on_ok:Lwt.return ~on_error:error_handler (parser ~dq_string) ~path
-      ~language_name:".strings" ic
+  let lines =
+    Basic.exec_parser_eio ~on_ok:Fn.id ~on_error:error_handler (parser ~dq_string) ~path
+      ~language_name:".strings" flow
   in
   List.iter lines ~f:(function
     | Translation (x, y) -> String.Table.set table ~key:x ~data:y

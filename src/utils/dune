@@ -3,8 +3,8 @@
   (libraries
     core
     core_unix
-    lwt
-    lwt.unix
+    eio_main
+    domainslib
   )
   (preprocess (pps
     ppx_jane
