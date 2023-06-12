@@ -5,6 +5,7 @@
     SZXX
 
     utils
+    angstrom_eio
     flow_parser
   )
   (preprocess (pps

@@ -1,0 +1,10 @@
+(library
+  (name angstrom_eio)
+  (libraries
+    angstrom
+    eio_main
+  )
+  (preprocess (pps
+    ppx_jane
+  ))
+)

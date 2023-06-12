@@ -3,10 +3,6 @@ open Eio.Std
 
 let flags = `Or_truncate 0o644
 
-let parser_chunk_size = 4096
-
-let parser_buffer_size = parser_chunk_size * 4
-
 let num_threads = 4
 
 let pool = Domainslib.Task.setup_pool ~num_domains:num_threads ()
