@@ -52,15 +52,15 @@ let init_contexts =
     if Atomic.compare_and_set initialized None cell
     then (
       let time = Utils.Timing.start () in
-      Utils.Io.run_in_pool (fun () -> stub_init_contexts Utils.Io.num_threads) () |> Result.ok_or_failwith;
+      (fun () -> stub_init_contexts Utils.Io.num_js_workers) () |> Result.ok_or_failwith;
 
       let time = time `Stop in
       Atomic.set init_time time;
-      Promise.resolve w (Pool.create Utils.Io.num_threads);
+      Promise.resolve w (Pool.create Utils.Io.num_js_workers);
       print_endline
         (sprintf
            !"✅ [%{Int63}ms] Initialized %d JS runtimes for TS and/or Pug processing\n"
-           time Utils.Io.num_threads ) );
+           time Utils.Io.num_js_workers ) );
     p
 
 (* Re-indent from 0 if base indent is greater than 0 *)
@@ -100,7 +100,7 @@ let extract kind code =
     | Pug -> clean_pug code
   in
   let fn_name = fn_name_of_kind kind in
-  Pool.with_pool pool ~f:(Utils.Io.run_in_pool (fun id -> stub_extract id code ~fn_name))
+  Pool.with_pool pool ~f:(fun id -> stub_extract id code ~fn_name)
 
 let extract_to_collector (collector : Utils.Collector.t) kind code =
   match extract kind code with

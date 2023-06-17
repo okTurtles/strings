@@ -62,14 +62,17 @@ module Debug = struct
     | Html
 end
 
-let collect_from_possible_scripts Utils.Collector.{ possible_scripts; _ } template_script ~on_string =
+let collect_from_possible_scripts Utils.Collector.({ possible_scripts; strings; _ } as collector)
+  template_script =
+  let on_string = Queue.enqueue strings in
   Queue.iter possible_scripts ~f:(fun raw ->
     match template_script with
     | JS -> Js.extract raw ~on_string
     | TS -> (
       match Quickjs.extract Typescript raw with
       | Error _ -> ()
-      | Ok (strings, _) -> Array.iter strings ~f:on_string ) )
+      | Ok (strings, _) -> Array.iter strings ~f:on_string ) );
+  Utils.Collector.analyzed_possible_scripts collector
 
 let collect_from_languages collector languages =
   Fiber.List.iter
@@ -84,8 +87,10 @@ let collect_from_languages collector languages =
     languages
 
 let debug_template env ~path languages template_script target =
-  let print_collector ~error_kind (Utils.Collector.{ strings; file_errors; _ } as collector) =
-    collect_from_possible_scripts collector template_script ~on_string:(Queue.enqueue strings);
+  let print_collector ~error_kind collector =
+    let Utils.Collector.{ strings; file_errors; _ } =
+      collect_from_possible_scripts collector template_script
+    in
     let module W = Eio.Buf_write in
     W.with_flow env#stdout (fun w ->
       let deduped = Queue.fold strings ~init:String.Set.empty ~f:String.Set.add in

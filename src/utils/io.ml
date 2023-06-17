@@ -3,21 +3,26 @@ open Eio.Std
 
 let flags = `Or_truncate 0o644
 
-let num_threads = 4
+let num_js_workers = 4
 
-let pool = Domainslib.Task.setup_pool ~num_domains:num_threads ()
+let num_processors = 4
+
+let processor_async = 4
+
+let pool = Domainslib.Task.setup_pool ~num_domains:2 ()
 
 let run_in_pool fn x =
-  let result, set_result = Promise.create () in
-  let _p =
+  let p, w = Promise.create () in
+  let (_ : unit Domainslib.Task.promise) =
     Domainslib.Task.async pool (fun () ->
-      (try Ok (fn x) with
-      | ex -> Error ex)
-      |> Promise.resolve set_result )
+      (match fn x with
+      | r -> Ok r
+      | exception exn -> Error exn)
+      |> Promise.resolve w )
   in
-  Promise.await_exn result
+  Promise.await_exn p
 
-let stat path = run_in_pool (fun path -> Core_unix.stat path) path
+let stat path = run_in_pool Core_unix.stat path
 
 let read_flow flow = Eio.Buf_read.(parse_exn ~max_size:Int.max_value take_all flow)
 

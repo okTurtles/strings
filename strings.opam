@@ -12,6 +12,9 @@ tags: []
 homepage: "https://github.com/okTurtles/strings"
 doc: "https://github.com/okTurtles/strings"
 bug-reports: "https://github.com/okTurtles/strings/issues"
+pin-depends: [
+  [ "domainslib.0.5.0.custom" "git+https://github.com/ocaml-multicore/domainslib.git#14fe8fd6f0c46806efe46dfd1720a44a21edad2a" ]
+]
 depends: [
   "ocaml" { = "5.0.0" }
   "ocaml-option-flambda"
@@ -21,7 +24,7 @@ depends: [
   "ocaml-lsp-server" { with-test }
 
   "eio_main" { = "0.10" }
-  "domainslib"
+  "domainslib" { = "0.5.0.custom" }
 
   "angstrom"
   "core" { >= "v0.15.0" }

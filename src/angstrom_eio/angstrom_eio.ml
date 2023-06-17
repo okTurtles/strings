@@ -50,12 +50,12 @@ let parse ?(pushback = default_pushback) parser src =
   let buf = Cstruct.create default_buffer_size in
   let rec loop = function
     | (Done _ as state)
-    | (Fail _ as state) ->
+     |(Fail _ as state) ->
       handle_parse_result state
     | Partial feed as state -> (
       match src#read_into buf with
       | 0
-      | (exception End_of_file) ->
+       |(exception End_of_file) ->
         finalize state |> handle_parse_result
       | len ->
         let next = feed (`Bigstring (Bigstringaf.sub buf.buffer ~off:0 ~len)) in
@@ -70,7 +70,7 @@ let rec buffered_state_loop pushback state src (buf : Cstruct.t) =
     let next =
       match src#read_into buf with
       | 0
-      | (exception End_of_file) ->
+       |(exception End_of_file) ->
         k `Eof
       | len -> k (`Bigstring (Bigstringaf.sub buf.buffer ~off:0 ~len))
     in
@@ -80,9 +80,9 @@ let rec buffered_state_loop pushback state src (buf : Cstruct.t) =
 
 let with_buffered_parse_state ?(pushback = default_pushback) state src =
   let buf = Cstruct.create default_buffer_size in
-  ( match state with
+  (match state with
   | Partial _ -> buffered_state_loop pushback state src buf
-  | _ -> state )
+  | _ -> state)
   |> handle_parse_result
 
 let async_many e k = Angstrom.(skip_many (e <* commit >>| k) <?> "async_many")
