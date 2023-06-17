@@ -12,7 +12,7 @@ type action =
 
 type t = {
   stream: action Eio.Stream.t;
-  num_workers: int;
+  num_domains: int;
   terminating: action Promise.t * action Promise.u;
   terminated: unit Promise.t * unit Promise.u;
 }
@@ -62,14 +62,14 @@ let start_domain ~sw ~domain_mgr ~limit ~terminating ~transient stream =
       go ();
       `Stop_daemon )
 
-let create ~sw ~num_workers ~worker_limit ?(capacity = 0) ?(transient = true) domain_mgr =
+let create ~sw ~num_domains ~domain_concurrency ?(capacity = 0) ?(transient = true) domain_mgr =
   let stream = Eio.Stream.create capacity in
   let instance =
-    { stream; num_workers; terminating = Promise.create (); terminated = Promise.create () }
+    { stream; num_domains; terminating = Promise.create (); terminated = Promise.create () }
   in
   let terminating = fst instance.terminating in
-  for _ = 1 to num_workers do
-    start_domain ~sw ~domain_mgr ~limit:worker_limit ~terminating ~transient stream
+  for _ = 1 to num_domains do
+    start_domain ~sw ~domain_mgr ~limit:domain_concurrency ~terminating ~transient stream
   done;
   instance
 
@@ -85,8 +85,8 @@ let run_exn instance ~f =
 
 let terminate = function
 | { terminating = p1, _; terminated = p2, _; _ } when Promise.is_resolved p1 -> Promise.await p2
-| { num_workers; terminating = _, w1; terminated = p2, w2; _ } ->
-  Promise.resolve w1 (Quit { atomic = Atomic.make 1; target = num_workers; all_done = w2 });
+| { num_domains; terminating = _, w1; terminated = p2, w2; _ } ->
+  Promise.resolve w1 (Quit { atomic = Atomic.make 1; target = num_domains; all_done = w2 });
   Promise.await p2
 
 let is_terminating { terminating = p, _; _ } = Promise.is_resolved p

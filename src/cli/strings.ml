@@ -185,8 +185,8 @@ let main env options = function
     let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0 } in
     Switch.run (fun sw ->
       let dispatcher =
-        Utils.Dispatcher.create ~sw ~num_workers:Utils.Io.num_processors
-          ~worker_limit:Utils.Io.processor_async env#domain_mgr
+        Utils.Dispatcher.create ~sw ~num_domains:Utils.Io.num_processors
+          ~domain_concurrency:Utils.Io.processor_async env#domain_mgr
       in
       options.targets
       |> Fiber.List.iter (fun directory ->
