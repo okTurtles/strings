@@ -1,7 +1,7 @@
 (library
-  (name angstrom_eio)
+  (name dispatcher)
   (libraries
-    angstrom
+    core
     eio_main
   )
   (preprocess (pps

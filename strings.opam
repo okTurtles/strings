@@ -13,7 +13,8 @@ homepage: "https://github.com/okTurtles/strings"
 doc: "https://github.com/okTurtles/strings"
 bug-reports: "https://github.com/okTurtles/strings/issues"
 pin-depends: [
-  [ "domainslib.0.5.0.custom" "git+https://github.com/ocaml-multicore/domainslib.git#14fe8fd6f0c46806efe46dfd1720a44a21edad2a" ]
+  [ "angstrom-eio.0.15.0.custom" "git+https://github.com/SGrondin/angstrom.git#137d5ba2bb55f99b5278c11ab0c967669f2b998a" ]
+  [ "angstrom.0.15.0.custom" "git+https://github.com/SGrondin/angstrom.git#137d5ba2bb55f99b5278c11ab0c967669f2b998a" ]
 ]
 depends: [
   "ocaml" { = "5.0.0" }
@@ -24,9 +25,10 @@ depends: [
   "ocaml-lsp-server" { with-test }
 
   "eio_main" { = "0.10" }
-  "domainslib" { = "0.5.0.custom" }
+  "domainslib"
 
-  "angstrom"
+  "angstrom" { = "0.15.0.custom" }
+  "angstrom-eio" { = "0.15.0.custom" }
   "core" { >= "v0.15.0" }
   "core_unix" { >= "v0.15.0" }
   "ppx_deriving"

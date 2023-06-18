@@ -49,18 +49,19 @@ let init_contexts =
   let p, w = Promise.create () in
   let cell = Some p in
   fun () ->
+    let num_js_workers = Utils.Io.num_js_workers in
     if Atomic.compare_and_set initialized None cell
     then (
       let time = Utils.Timing.start () in
-      (fun () -> stub_init_contexts Utils.Io.num_js_workers) () |> Result.ok_or_failwith;
+      (fun () -> stub_init_contexts num_js_workers) () |> Result.ok_or_failwith;
 
       let time = time `Stop in
       Atomic.set init_time time;
-      Promise.resolve w (Pool.create Utils.Io.num_js_workers);
+      Promise.resolve w (Pool.create num_js_workers);
       print_endline
         (sprintf
            !"✅ [%{Int63}ms] Initialized %d JS runtimes for TS and/or Pug processing\n"
-           time Utils.Io.num_js_workers ) );
+           time num_js_workers ) );
     p
 
 (* Re-indent from 0 if base indent is greater than 0 *)

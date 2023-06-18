@@ -30,11 +30,7 @@ let analyzed_possible_scripts collector =
 let render_errors { file_errors; path; _ } =
   match Queue.length file_errors with
   | 0 -> None
-  | 1 ->
-    (* TODO: review/optimize *)
-    let buf = Buffer.create 256 in
-    bprintf buf "\n❌ 1 error in %s: %s" path (Queue.get file_errors 0);
-    Some (Buffer.contents buf)
+  | 1 -> Some (sprintf "\n❌ 1 error in %s: %s" path (Queue.get file_errors 0))
   | len ->
     let buf = Buffer.create 256 in
     bprintf buf "\n❌ %d errors in %s:\n" len path;

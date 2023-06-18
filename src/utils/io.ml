@@ -24,8 +24,6 @@ let run_in_pool fn x =
 
 let stat path = run_in_pool Core_unix.stat path
 
-let read_flow flow = Eio.Buf_read.(parse_exn ~max_size:Int.max_value take_all flow)
-
 let load_flow flow =
   let open Eio in
   (* Taken from [Eio.Path.load] *)

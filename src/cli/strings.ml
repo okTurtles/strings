@@ -1,9 +1,7 @@
 open! Core
 open Eio.Std
 
-let version = "2.2.1"
-
-let plural i = if i = 1 then "" else "s"
+let version = "2.3.0"
 
 type counts = {
   vue: int ref;
@@ -18,6 +16,7 @@ type common_options = {
   targets: string list;
   template_script: Vue.template_script;
   slow_pug: bool;
+  show_debugging: bool;
 }
 
 type action =
@@ -34,7 +33,7 @@ type file_type =
 type traversal = {
   table: String.Set.t String.Table.t;
   counts: counts;
-  dispatcher: Utils.Dispatcher.t;
+  dispatcher: Dispatcher.t;
   slow_pug: bool;
   template_script: Vue.template_script;
 }
@@ -66,7 +65,7 @@ let reduce_collector env table count collector =
       | None -> String.Set.add String.Set.empty realname
       | Some set -> String.Set.add set realname ) )
 
-let do_work ({ path; _ } as job) =
+let process_job ({ path; _ } as job) =
   let collector = Utils.Collector.create ~path in
   (match job with
   | { file_type = JS; eio_path; _ } ->
@@ -110,7 +109,7 @@ let rec traverse env ({ slow_pug; template_script; counts; _ } as traversal) dir
            let job =
              { file_type; eio_path = Eio.Path.(env#fs / path); path; template_script; slow_pug }
            in
-           let collector = Utils.Dispatcher.run_exn traversal.dispatcher ~f:(fun () -> do_work job) in
+           let collector = Dispatcher.run_exn traversal.dispatcher ~f:(fun () -> process_job job) in
            let count =
              match job.file_type with
              | JS -> counts.js
@@ -165,6 +164,7 @@ let main env options = function
 | Run ->
   let overall_time = Utils.Timing.start () in
   let outdir = options.outdir in
+  if List.is_empty options.targets then failwith "Please specify at least one directory";
   (* Check current directory *)
   let strings_dir_files =
     let git_dir, strings_dir =
@@ -185,7 +185,7 @@ let main env options = function
     let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0 } in
     Switch.run (fun sw ->
       let dispatcher =
-        Utils.Dispatcher.create ~sw ~num_domains:Utils.Io.num_processors
+        Dispatcher.create ~sw ~num_domains:Utils.Io.num_processors
           ~domain_concurrency:Utils.Io.processor_async env#domain_mgr
       in
       options.targets
@@ -209,7 +209,7 @@ let main env options = function
       let english =
         String.Table.map table ~f:(fun set -> String.Set.to_array set |> String.concat_array ~sep:", ")
       in
-      let f ext i = sprintf "%d %s file%s" i ext (plural i) in
+      let f ext i = sprintf "%d %s file%s" i ext (if i = 1 then "" else "s") in
       let time = Int63.(time `Stop - Atomic.get Quickjs.init_time) in
       Eio.Flow.copy_string
         (sprintf
@@ -256,8 +256,10 @@ let () =
         ~doc:
           "Use the official Pug parser. Much slower, especially on large files. Use this option if any \
            translation seems to be missing from a Pug file, and report the bug if this option fixes it."
+    and show_debugging =
+      flag "--show-debugging" ~full_flag_required:() no_arg ~doc:"Use this option when reporting bugs."
     in
-    { outdir; targets; template_script = (if use_ts then TS else JS); slow_pug }
+    { outdir; targets; template_script = (if use_ts then TS else JS); slow_pug; show_debugging }
   in
   let action =
     let open Param in
@@ -289,8 +291,9 @@ let () =
   Param.both common action
   >>| (fun (common, action) () ->
         let program env = main env common action in
-        Eio_main.run (fun env ->
+        (* TODO: Revert to Eio_main.run once Eio issue #559 is fixed *)
+        Eio_posix.run (fun env ->
           try program env with
-          | exn -> handle_system_failure env#stderr exn ))
+          | exn when not common.show_debugging -> handle_system_failure env#stderr exn ))
   |> basic ~summary:"Extract i18n strings - https://github.com/okTurtles/strings"
   |> Command_unix.run ~version
