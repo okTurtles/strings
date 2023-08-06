@@ -33,7 +33,7 @@ type file_type =
 type traversal = {
   table: String.Set.t String.Table.t;
   counts: counts;
-  dispatcher: Dispatcher.t;
+  wp: Eio.Workpool.t;
   slow_pug: bool;
   template_script: Vue.template_script;
 }
@@ -47,23 +47,23 @@ type job = {
 }
 
 let file_type_of_filename filename =
-  match lazy (String.slice filename (-4) 0), lazy (String.slice filename (-3) 0) with
-  | _, (lazy ".js") when String.is_suffix ~suffix:".js" filename -> Some JS
-  | _, (lazy ".ts") -> Some TS
+  match lazy (String.slice filename (-4) 0), String.slice filename (-3) 0 with
+  | _, ".js" when String.is_suffix ~suffix:".js" filename -> Some JS
+  | _, ".ts" -> Some TS
   | (lazy ".vue"), _ -> Some VUE
   | (lazy ".pug"), _ -> Some PUG
   | _, _ when String.is_suffix filename ~suffix:".html" -> Some HTML
   | _ -> None
 
-let reduce_collector env table count collector =
+let reduce_collector ~stderr table count collector =
   incr count;
   Utils.Collector.render_errors collector
-  |> Option.iter ~f:(fun s -> Eio.Flow.copy_string (sprintf "%s\n" s) env#stderr);
+  |> Option.iter ~f:(fun s -> Eio.Flow.copy_string (sprintf "%s\n" s) stderr);
   Queue.iter collector.strings ~f:(fun string ->
     let realname = collector.filename in
-    String.Table.update table string ~f:(function
-      | None -> String.Set.add String.Set.empty realname
-      | Some set -> String.Set.add set realname ) )
+    Hashtbl.update table string ~f:(function
+      | None -> Set.add String.Set.empty realname
+      | Some set -> Set.add set realname ) )
 
 let process_job ({ path; _ } as job) =
   let collector = Utils.Collector.create ~path in
@@ -95,21 +95,19 @@ let process_job ({ path; _ } as job) =
 
   Vue.collect_from_possible_scripts collector job.template_script
 
-let rec traverse env ({ slow_pug; template_script; counts; _ } as traversal) directory =
-  Eio.Path.with_open_dir Eio.Path.(env#fs / directory) Eio.Path.read_dir
+let rec traverse ~fs ~stderr ({ slow_pug; template_script; counts; wp; _ } as traversal) directory =
+  Eio.Path.with_open_dir Eio.Path.(fs / directory) Eio.Path.read_dir
   |> Fiber.List.iter (fun filename ->
        let path = Filename.concat directory filename in
-       match filename, Utils.Io.stat path with
+       match filename, Utils.Io.stat wp path with
        | "node_modules", _ -> ()
-       | _, { st_kind = S_DIR; _ } -> traverse env traversal path
+       | _, { st_kind = S_DIR; _ } -> traverse ~fs ~stderr traversal path
        | _, { st_kind = S_REG; _ } -> (
          match file_type_of_filename filename with
          | None -> ()
          | Some file_type ->
-           let job =
-             { file_type; eio_path = Eio.Path.(env#fs / path); path; template_script; slow_pug }
-           in
-           let collector = Dispatcher.run_exn traversal.dispatcher ~f:(fun () -> process_job job) in
+           let job = { file_type; eio_path = Eio.Path.(fs / path); path; template_script; slow_pug } in
+           let collector = Eio.Workpool.run_exn traversal.wp (fun () -> process_job job) in
            let count =
              match job.file_type with
              | JS -> counts.js
@@ -118,26 +116,28 @@ let rec traverse env ({ slow_pug; template_script; counts; _ } as traversal) dir
              | PUG -> counts.pug
              | HTML -> counts.html
            in
-           reduce_collector env traversal.table count collector )
+           reduce_collector ~stderr traversal.table count collector )
        | _ -> () )
 
 let main env options = function
 | Debug lang ->
   let string_parsers = Parsing.Basic.make_string_parsers () in
+  let fs = Eio.Stdenv.fs env in
+  let stdout = Eio.Stdenv.stdout env in
   List.iter options.targets ~f:(fun path ->
-    Eio.Flow.copy_string (sprintf "\n>>> Debugging [%s]\n" path) env#stdout;
+    Eio.Flow.copy_string (sprintf "\n>>> Debugging [%s]\n" path) stdout;
     let ({ slow_pug; template_script; _ } : common_options) = options in
-    Eio.Path.with_open_in Eio.Path.(env#fs / path) @@ fun flow ->
+    Eio.Path.with_open_in Eio.Path.(fs / path) @@ fun flow ->
     match lang, String.slice path (-4) 0 with
     | _, ".vue" ->
       let languages = Vue.parse ~path ~slow_pug flow in
-      Vue.debug_template env ~path languages template_script lang
+      Vue.debug_template ~stdout ~path languages template_script lang
     | Pug, ".pug" -> (
       let source = Utils.Io.load_flow flow in
       let slow_parse () =
         let collector = Utils.Collector.create ~path in
         Quickjs.extract_to_collector collector Pug source;
-        Vue.debug_template env ~path
+        Vue.debug_template ~stdout ~path
           [ Pug { collector; length = String.length source } ]
           template_script lang
       in
@@ -145,36 +145,45 @@ let main env options = function
       | true -> slow_parse ()
       | false ->
         let on_ok parsed =
-          Vue.debug_template env ~path [ Pug_native { parsed; length = None } ] template_script lang
+          Vue.debug_template ~stdout ~path [ Pug_native { parsed; length = None } ] template_script lang
         in
         let on_error ~msg =
           Eio.Flow.copy_string
             (sprintf "Falling back to official Pug parser for %s (%s)\n" path msg)
-            env#stdout;
+            stdout;
           slow_parse ()
         in
         Parsing.Basic.exec_parser ~on_ok ~on_error (Parsing.Pug.parser string_parsers) ~path
           ~language_name:"Pug" source )
     | Html, _ when String.is_suffix path ~suffix:".html" ->
       let on_ok parsed =
-        Vue.debug_template env ~path [ Html { parsed; length = None } ] template_script lang
+        Vue.debug_template ~stdout ~path [ Html { parsed; length = None } ] template_script lang
       in
       Parsing.Basic.exec_parser_eio ~on_ok Parsing.Html.parser ~path ~language_name:"Pug" flow
-    | _ -> Eio.Flow.copy_string (sprintf "Nothing to do for file [%s]\n" path) env#stdout )
+    | _ -> Eio.Flow.copy_string (sprintf "Nothing to do for file [%s]\n" path) stdout )
 | Run ->
   let overall_time = Utils.Timing.start () in
+  Switch.run @@ fun sw ->
   let outdir = options.outdir in
   if List.is_empty options.targets then failwith "Please specify at least one directory";
+  let fs = Eio.Stdenv.fs env in
+  let stdout = Eio.Stdenv.stdout env in
+  let sys_wp =
+    Eio.Workpool.create ~sw ~domain_count:Utils.Io.num_systhreads ~domain_concurrency:1
+      (Eio.Stdenv.domain_mgr env)
+  in
   (* Check current directory *)
   let strings_dir_files =
     let git_dir, strings_dir =
-      Fiber.pair (fun () -> Utils.Io.directory_exists ".git") (fun () -> Utils.Io.directory_exists outdir)
+      Fiber.pair
+        (fun () -> Utils.Io.directory_exists sys_wp ".git")
+        (fun () -> Utils.Io.directory_exists sys_wp outdir)
     in
     if not (git_dir || strings_dir) then failwith "This program must be run from the root of your project";
     match strings_dir with
-    | true -> Eio.Path.with_open_dir Eio.Path.(env#fs / outdir) Eio.Path.read_dir
+    | true -> Eio.Path.with_open_dir Eio.Path.(fs / outdir) Eio.Path.read_dir
     | false ->
-      Utils.Io.mkdir_p env ~dir_name:outdir ~perms:0o751;
+      Utils.Io.mkdir_p env sys_wp ~dir_name:outdir ~perms:0o751;
       []
   in
 
@@ -183,32 +192,24 @@ let main env options = function
   let table, counts =
     let table = String.Table.create () in
     let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0 } in
-    Switch.run (fun sw ->
-      let dispatcher =
-        Dispatcher.create ~sw ~num_domains:Utils.Io.num_processors
-          ~domain_concurrency:Utils.Io.processor_async env#domain_mgr
-      in
-      options.targets
-      |> Fiber.List.iter (fun directory ->
-           let root = String.chop_suffix_if_exists ~suffix:"/" directory in
-           traverse env
-             {
-               table;
-               counts;
-               dispatcher;
-               slow_pug = options.slow_pug;
-               template_script = options.template_script;
-             }
-             root ) );
+    Switch.run @@ fun sw ->
+    let wp =
+      Eio.Workpool.create ~sw ~domain_count:Utils.Io.num_cores
+        ~domain_concurrency:Utils.Io.traversal_jobs_per_core (Eio.Stdenv.domain_mgr env)
+    in
+    options.targets
+    |> Fiber.List.iter (fun directory ->
+         let root = String.chop_suffix_if_exists ~suffix:"/" directory in
+         traverse ~fs ~stderr:(Eio.Stdenv.stderr env)
+           { table; counts; wp; slow_pug = options.slow_pug; template_script = options.template_script }
+           root );
     table, counts
   in
 
   Switch.run (fun sw ->
     (* English *)
     let english =
-      let english =
-        String.Table.map table ~f:(fun set -> String.Set.to_array set |> String.concat_array ~sep:", ")
-      in
+      let english = Hashtbl.map table ~f:(fun set -> Set.to_array set |> String.concat_array ~sep:", ") in
       let f ext i = sprintf "%d %s file%s" i ext (if i = 1 then "" else "s") in
       let time = Int63.(time `Stop - Atomic.get Quickjs.init_time) in
       Eio.Flow.copy_string
@@ -216,8 +217,8 @@ let main env options = function
            !"✅ [%{Int63}ms] Processed %s, %s, %s, %s, and %s\n"
            time (f ".js" !(counts.js)) (f ".ts" !(counts.ts)) (f ".html" !(counts.html))
            (f ".vue" !(counts.vue)) (f ".pug" !(counts.pug)) )
-        env#stdout;
-      Fiber.fork ~sw (fun () -> Generate.write_english env ~version ~outdir english);
+        stdout;
+      Fiber.fork ~sw (fun () -> Generate.write_english ~fs ~stdout ~version ~outdir english);
       english
     in
 
@@ -229,14 +230,14 @@ let main env options = function
         | Some "english" -> ()
         | Some language -> (
           let path = Filename.concat outdir filename in
-          match Utils.Io.stat path with
+          match Utils.Io.stat sys_wp path with
           | { st_kind = S_REG; _ } ->
-            let other = Eio.Path.with_open_in Eio.Path.(env#fs / path) (Parsing.Strings.parse ~path) in
-            Generate.write_other env ~version ~outdir ~language english other
+            let other = Eio.Path.with_open_in Eio.Path.(fs / path) (Parsing.Strings.parse ~path) in
+            Generate.write_other ~fs ~stdout ~version ~outdir ~language english other
           | _ -> () )
         | None -> ())
       strings_dir_files );
-  Eio.Flow.copy_string (sprintf !"Completed. (%{Int63}ms)\n" (overall_time `Stop)) env#stderr
+  Eio.Flow.copy_string (sprintf !"Completed. (%{Int63}ms)\n" (overall_time `Stop)) (Eio.Stdenv.stderr env)
 
 let () =
   let open Command in
@@ -294,6 +295,6 @@ let () =
         (* TODO: Revert to Eio_main.run once Eio issue #559 is fixed *)
         Eio_posix.run (fun env ->
           try program env with
-          | exn when not common.show_debugging -> handle_system_failure env#stderr exn ))
+          | exn when not common.show_debugging -> handle_system_failure (Eio.Stdenv.stderr env) exn ))
   |> basic ~summary:"Extract i18n strings - https://github.com/okTurtles/strings"
   |> Command_unix.run ~version

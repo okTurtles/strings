@@ -14,23 +14,20 @@ let collect Utils.Collector.{ strings; possible_scripts; _ } top =
        |"id", _
        |_, "" ->
         ()
-      | _, source -> Queue.enqueue possible_scripts (SZXX.Xml.unescape source) );
-    Array.iter node.children ~f:loop
+      | _, source -> Queue.enqueue possible_scripts (SZXX.Xml.DOM.unescape source) );
+    List.iter node.children ~f:loop
   in
   loop top
 
 let finalize ll =
-  List.fold_result ll ~init:Xml.SAX.To_DOM.init ~f:(fun acc x ->
-    Xml.SAX.To_DOM.folder ~strict:false (Ok acc) x )
-  |> function
-  | Error _ as err -> err
-  | Ok Xml.SAX.To_DOM.{ top = None; _ } -> Error "No root HTML element"
-  | Ok Xml.SAX.To_DOM.{ top = Some top; _ } -> Ok top
+  let open Xml.SAX.Expert.To_DOM in
+  List.fold ll ~init ~f:(fun acc x -> folder ~strict:false acc x) |> function
+  | { top = None; _ } -> Error "No root HTML element"
+  | { top = Some top; _ } -> Ok top
 
 let parser =
   let open Angstrom in
-  many Xml.(make_parser { accept_html_boolean_attributes = true; accept_unquoted_attributes = true })
-  >>= fun ll ->
+  many Xml.html_parser >>= fun ll ->
   match finalize ll with
   | Ok x -> return x
   | Error msg -> fail msg

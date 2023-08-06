@@ -86,16 +86,16 @@ let collect_from_languages collector languages =
       | Failed msg -> Queue.enqueue collector.file_errors msg)
     languages
 
-let debug_template env ~path languages template_script target =
+let debug_template ~stdout ~path languages template_script target =
   let print_collector ~error_kind collector =
     let Utils.Collector.{ strings; file_errors; _ } =
       collect_from_possible_scripts collector template_script
     in
     let module W = Eio.Buf_write in
-    W.with_flow env#stdout (fun w ->
-      let deduped = Queue.fold strings ~init:String.Set.empty ~f:String.Set.add in
-      Eio.Flow.copy_string (sprintf "Found %d strings:\n" (String.Set.length deduped)) env#stdout;
-      String.Set.iter deduped ~f:(fun s -> W.string w (sprintf !"%{Yojson.Basic}\n" (`String s)));
+    W.with_flow stdout (fun w ->
+      let deduped = Queue.fold strings ~init:String.Set.empty ~f:Set.add in
+      Eio.Flow.copy_string (sprintf "Found %d strings:\n" (Set.length deduped)) stdout;
+      Set.iter deduped ~f:(fun s -> W.string w (sprintf !"%{Yojson.Basic}\n" (`String s)));
       if not (Queue.is_empty file_errors)
       then (
         W.string w (sprintf "\n❌ %s errors in %s:\n" error_kind path);
@@ -105,29 +105,29 @@ let debug_template env ~path languages template_script target =
   List.iter languages ~f:(fun lang ->
     match (lang : Language.t), (target : Debug.t) with
     | Js source, _ ->
-      Eio.Flow.copy_string (sprintf "<JS Code - %d bytes>\n" (String.length source)) env#stdout
+      Eio.Flow.copy_string (sprintf "<JS Code - %d bytes>\n" (String.length source)) stdout
     | Ts source, _ ->
-      Eio.Flow.copy_string (sprintf "<TS Code - %d bytes>\n" (String.length source)) env#stdout
-    | Css length, _ -> Eio.Flow.copy_string (sprintf "<CSS Code - %d bytes>\n" length) env#stdout
+      Eio.Flow.copy_string (sprintf "<TS Code - %d bytes>\n" (String.length source)) stdout
+    | Css length, _ -> Eio.Flow.copy_string (sprintf "<CSS Code - %d bytes>\n" length) stdout
     | Html { parsed; length = _ }, Html ->
       let collector = Utils.Collector.create ~path in
-      Eio.Flow.copy_string (sprintf !"%{sexp#hum: Html.t}" parsed) env#stdout;
+      Eio.Flow.copy_string (sprintf !"%{sexp#hum: Html.t}" parsed) stdout;
       collect_from_languages collector [ lang ];
       print_collector ~error_kind:"HTML" collector
     | (Pug_native { parsed; length = _ } as lang), Pug ->
-      Eio.Flow.copy_string (sprintf !"%{sexp#hum: Pug.t}" parsed) env#stdout;
+      Eio.Flow.copy_string (sprintf !"%{sexp#hum: Pug.t}" parsed) stdout;
       let collector = Utils.Collector.create ~path in
       collect_from_languages collector [ lang ];
       print_collector ~error_kind:"Pug" collector
     | Pug { collector; length = _ }, Pug -> print_collector ~error_kind:"Pug" collector
     | Html { length = Some len; _ }, Pug ->
-      Eio.Flow.copy_string (sprintf "<HTML code - %d bytes>" len) env#stdout
-    | Html { length = None; _ }, Pug -> Eio.Flow.copy_string "<HTML code>" env#stdout
+      Eio.Flow.copy_string (sprintf "<HTML code - %d bytes>" len) stdout
+    | Html { length = None; _ }, Pug -> Eio.Flow.copy_string "<HTML code>" stdout
     | Pug_native { length = Some len; _ }, Html ->
-      Eio.Flow.copy_string (sprintf "<Pug code - %d bytes>" len) env#stdout
-    | Pug_native { length = None; _ }, Html -> Eio.Flow.copy_string "<Pug code>" env#stdout
-    | Pug { length; _ }, Html -> Eio.Flow.copy_string (sprintf "<Pug code - %d bytes>" length) env#stdout
-    | Failed msg, _ -> Eio.Flow.copy_string (sprintf "❌ Parsing error in path: %s" msg) env#stdout )
+      Eio.Flow.copy_string (sprintf "<Pug code - %d bytes>" len) stdout
+    | Pug_native { length = None; _ }, Html -> Eio.Flow.copy_string "<Pug code>" stdout
+    | Pug { length; _ }, Html -> Eio.Flow.copy_string (sprintf "<Pug code - %d bytes>" length) stdout
+    | Failed msg, _ -> Eio.Flow.copy_string (sprintf "❌ Parsing error in path: %s" msg) stdout )
 
 let parse ~path ~slow_pug flow =
   let buf = Buffer.create 256 in

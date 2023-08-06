@@ -1,28 +1,16 @@
 open! Core
-open Eio.Std
 
 let flags = `Or_truncate 0o644
 
 let num_js_workers = 4
 
-let num_processors = 4
+let num_cores = 4
 
-let processor_async = 4
+let traversal_jobs_per_core = 4
 
-let pool = Domainslib.Task.setup_pool ~num_domains:2 ()
+let num_systhreads = 2
 
-let run_in_pool fn x =
-  let p, w = Promise.create () in
-  let (_ : unit Domainslib.Task.promise) =
-    Domainslib.Task.async pool (fun () ->
-      (match fn x with
-      | r -> Ok r
-      | exception exn -> Error exn)
-      |> Promise.resolve w )
-  in
-  Promise.await_exn p
-
-let stat path = run_in_pool Core_unix.stat path
+let stat wp path : Core_unix.stats = Eio.Workpool.run_exn wp (fun () -> Core_unix.stat path)
 
 let load_flow flow =
   let open Eio in
@@ -43,13 +31,13 @@ let load_flow flow =
     let bt = Stdlib.Printexc.get_raw_backtrace () in
     Exn.reraise_with_context ex bt "loading flow"
 
-let directory_exists path =
-  match stat path with
+let directory_exists wp path =
+  match stat wp path with
   | { st_kind = S_DIR; _ } -> true
   | { st_kind = _; _ } -> failwithf "%s already exists, but is not a directory" path ()
   | exception _ -> false
 
-let mkdir_p env ~dir_name ~perms:perm =
+let mkdir_p env wp ~dir_name ~perms:perm =
   let (_ : string) =
     Filename.parts dir_name
     |> List.fold ~init:"" ~f:(fun acc part ->
@@ -57,7 +45,7 @@ let mkdir_p env ~dir_name ~perms:perm =
          | "" -> part
          | acc -> (
            let path = Filename.concat acc part in
-           directory_exists path |> function
+           directory_exists wp path |> function
            | true -> path
            | false ->
              Eio.Path.mkdir ~perm Eio.Path.(env#fs / path);

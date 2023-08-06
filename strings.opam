@@ -15,6 +15,10 @@ bug-reports: "https://github.com/okTurtles/strings/issues"
 pin-depends: [
   [ "angstrom-eio.0.15.0.custom" "git+https://github.com/SGrondin/angstrom.git#137d5ba2bb55f99b5278c11ab0c967669f2b998a" ]
   [ "angstrom.0.15.0.custom" "git+https://github.com/SGrondin/angstrom.git#137d5ba2bb55f99b5278c11ab0c967669f2b998a" ]
+  [ "eio.0.11.custom" "git+https://github.com/SGrondin/eio.git#full-workpool" ]
+  [ "eio_posix.0.11.custom" "git+https://github.com/SGrondin/eio.git#full-workpool" ]
+  [ "eio_linux.0.11.custom" "git+https://github.com/SGrondin/eio.git#full-workpool" ]
+  [ "eio_main.0.11.custom" "git+https://github.com/SGrondin/eio.git#full-workpool" ]
 ]
 depends: [
   "ocaml" { = "5.0.0" }
@@ -24,8 +28,7 @@ depends: [
   "ocamlformat" { = "0.25.1" & with-test }
   "ocaml-lsp-server" { with-test }
 
-  "eio_main" { = "0.10" }
-  "domainslib"
+  "eio_main" { = "0.11.custom" }
 
   "angstrom" { = "0.15.0.custom" }
   "angstrom-eio" { = "0.15.0.custom" }
@@ -39,5 +42,5 @@ depends: [
   "yojson"
   "uuidm"
   "wtf8"
-  "SZXX" { >= "2.3.0" }
+  "SZXX" { >= "4.0.0" }
 ]

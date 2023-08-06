@@ -14,17 +14,17 @@ let json_pair left right first =
       else "," )
     left right
 
-let write_english env ~version ~outdir english =
+let write_english ~fs ~stdout ~version ~outdir english =
   let time = Utils.Timing.start () in
   let path_strings = Filename.concat outdir "english.strings" in
   let path_json = Filename.concat outdir "english.json" in
   let first = ref true in
   Switch.run (fun sw ->
     let file_strings =
-      Eio.Path.open_out ~sw ~create:Utils.Io.flags Eio.Path.(env#fs / outdir / "english.strings")
+      Eio.Path.open_out ~sw ~create:Utils.Io.flags Eio.Path.(fs / outdir / "english.strings")
     in
     let file_json =
-      Eio.Path.open_out ~sw ~create:Utils.Io.flags Eio.Path.(env#fs / outdir / "english.json")
+      Eio.Path.open_out ~sw ~create:Utils.Io.flags Eio.Path.(fs / outdir / "english.json")
     in
     let module W = Eio.Buf_write in
     W.with_flow file_strings @@ fun w_strings ->
@@ -34,10 +34,9 @@ let write_english env ~version ~outdir english =
     W.char w_json '{';
     (* Switch to a map to preserve order as much as possible and therefore reduce merge conflicts *)
     let map =
-      String.Table.fold english ~init:String.Map.empty ~f:(fun ~key ~data acc ->
-        String.Map.set acc ~key ~data )
+      Hashtbl.fold english ~init:String.Map.empty ~f:(fun ~key ~data acc -> Map.set acc ~key ~data)
     in
-    String.Map.iteri map ~f:(fun ~key ~data ->
+    Map.iteri map ~f:(fun ~key ~data ->
       let fmt_key = fmt key in
       W.string w_strings (sprintf "/* %s */\n%s = %s;\n\n" data fmt_key fmt_key);
       W.string w_json (json_pair fmt_key fmt_key first) );
@@ -46,21 +45,20 @@ let write_english env ~version ~outdir english =
   Eio.Flow.copy_string
     (sprintf
        !"✅ [%{Int63}ms] Generated '%s' and '%s' with:\n- %d unique strings\n\n"
-       (time `Stop) path_strings path_json (String.Table.length english) )
-    env#stdout
+       (time `Stop) path_strings path_json (Hashtbl.length english) )
+    stdout
 
-let write_other env ~version ~outdir ~language english other =
+let write_other ~fs ~stdout ~version ~outdir ~language english other =
   let time = Utils.Timing.start () in
   let path_strings = Filename.concat outdir (sprintf "%s.strings" language) in
   let path_json = Filename.concat outdir (sprintf "%s.json" language) in
   let n_left, n_right, n_both =
     Switch.run @@ fun sw ->
     let file_strings =
-      Eio.Path.open_out ~sw ~create:Utils.Io.flags
-        Eio.Path.(env#fs / outdir / sprintf "%s.strings" language)
+      Eio.Path.open_out ~sw ~create:Utils.Io.flags Eio.Path.(fs / outdir / sprintf "%s.strings" language)
     in
     let file_json =
-      Eio.Path.open_out ~sw ~create:Utils.Io.flags Eio.Path.(env#fs / outdir / sprintf "%s.json" language)
+      Eio.Path.open_out ~sw ~create:Utils.Io.flags Eio.Path.(fs / outdir / sprintf "%s.json" language)
     in
     let module W = Eio.Buf_write in
     W.with_flow file_strings @@ fun w_strings ->
@@ -69,7 +67,7 @@ let write_other env ~version ~outdir ~language english other =
     let other_only = ref String.Map.empty in
     let both = ref String.Map.empty in
     let add_entry map_ref ~line_strings ~line_json =
-      map_ref := String.Map.set !map_ref ~key:line_strings ~data:line_json;
+      map_ref := Map.set !map_ref ~key:line_strings ~data:line_json;
       None
     in
     let missing_translation key x =
@@ -78,7 +76,7 @@ let write_other env ~version ~outdir ~language english other =
       add_entry english_only ~line_strings ~line_json:(fmt_key, fmt_key)
     in
     let _table =
-      String.Table.merge english other ~f:(fun ~key -> function
+      Hashtbl.merge english other ~f:(fun ~key -> function
         | `Left x -> missing_translation key x
         | `Both (x, y) when String.(key = y) -> missing_translation key x
         | `Both (x, y) ->
@@ -97,7 +95,7 @@ let write_other env ~version ~outdir ~language english other =
     W.string w_strings (header ~version);
     W.char w_json '{';
     let write_pairs map =
-      String.Map.fold map ~init:0 ~f:(fun ~key:line_strings ~data:(x, y) acc ->
+      Map.fold map ~init:0 ~f:(fun ~key:line_strings ~data:(x, y) acc ->
         W.string w_strings line_strings;
         W.string w_json (json_pair x y first);
         acc + 1 )
@@ -105,7 +103,7 @@ let write_other env ~version ~outdir ~language english other =
     let n_left = write_pairs !english_only in
     let n_both = write_pairs !both in
     let n_right =
-      String.Map.fold !other_only ~init:0 ~f:(fun ~key:line_strings ~data:() acc ->
+      Map.fold !other_only ~init:0 ~f:(fun ~key:line_strings ~data:() acc ->
         W.string w_strings line_strings;
         acc + 1 )
     in
@@ -120,4 +118,4 @@ let write_other env ~version ~outdir ~language english other =
          - %d existing strings\n\
          - %d unused strings\n\n"
        (time `Stop) path_strings path_json n_left n_both n_right )
-    env#stdout
+    stdout

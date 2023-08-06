@@ -4,7 +4,6 @@
     core
     core_unix
     eio_main
-    domainslib
   )
   (preprocess (pps
     ppx_jane

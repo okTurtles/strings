@@ -3,7 +3,6 @@
   (libraries
     parsing
     quickjs
-    dispatcher
     utils
 
     stdlib-shims
