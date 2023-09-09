@@ -10,7 +10,7 @@ let traversal_jobs_per_core = 4
 
 let num_systhreads = 2
 
-let stat wp path : Core_unix.stats = Eio.Workpool.run_exn wp (fun () -> Core_unix.stat path)
+let stat wp path : Core_unix.stats = Eio.Workpool.submit_exn wp (fun () -> Core_unix.stat path)
 
 let load_flow flow =
   let open Eio in

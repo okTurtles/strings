@@ -41,7 +41,7 @@ type traversal = {
 
 type job = {
   file_type: file_type;
-  eio_path: Eio.Fs.dir Eio.Path.t;
+  eio_path: [< Eio.Fs.dir_ty ] Eio.Path.t;
   path: string;
   template_script: Vue.template_script;
   slow_pug: bool;
@@ -108,7 +108,7 @@ let rec traverse ~fs ~stderr ({ slow_pug; template_script; counts; wp; _ } as tr
          | None -> ()
          | Some file_type ->
            let job = { file_type; eio_path = Eio.Path.(fs / path); path; template_script; slow_pug } in
-           let collector = Eio.Workpool.run_exn traversal.wp (fun () -> process_job job) in
+           let collector = Eio.Workpool.submit_exn traversal.wp (fun () -> process_job job) in
            let count =
              match job.file_type with
              | JS -> counts.js
