@@ -36,6 +36,7 @@ type traversal = {
   wp: Eio.Workpool.t;
   slow_pug: bool;
   template_script: Vue.template_script;
+  root: string;
 }
 
 type job = {
@@ -55,15 +56,15 @@ let file_type_of_filename filename =
   | _, _ when String.is_suffix filename ~suffix:".html" -> Some HTML
   | _ -> None
 
-let reduce_collector ~stderr table count collector =
+let reduce_collector ~stderr table count collector ~root =
   incr count;
   Utils.Collector.render_errors collector
   |> Option.iter ~f:(fun s -> Eio.Flow.copy_string (sprintf "%s\n" s) stderr);
   Queue.iter collector.strings ~f:(fun string ->
-    let realname = collector.filename in
+    let relpath = String.chop_prefix_exn collector.path ~prefix:root in
     Hashtbl.update table string ~f:(function
-      | None -> Set.add String.Set.empty realname
-      | Some set -> Set.add set realname ) )
+      | None -> Set.add String.Set.empty relpath
+      | Some set -> Set.add set relpath ) )
 
 let process_job ({ path; _ } as job) =
   let collector = Utils.Collector.create ~path in
@@ -116,7 +117,7 @@ let rec traverse ~fs ~stderr ({ slow_pug; template_script; counts; wp; _ } as tr
              | PUG -> counts.pug
              | HTML -> counts.html
            in
-           reduce_collector ~stderr traversal.table count collector )
+           reduce_collector ~stderr traversal.table count collector ~root:traversal.root )
        | _ -> () )
 
 let main env options = function
@@ -199,10 +200,21 @@ let main env options = function
     in
     options.targets
     |> Fiber.List.iter (fun directory ->
-         let root = String.chop_suffix_if_exists ~suffix:"/" directory in
+         let root_slash, root_noslash =
+           match String.chop_suffix ~suffix:"/" directory with
+           | Some s -> directory, s
+           | None -> sprintf "%s/" directory, directory
+         in
          traverse ~fs ~stderr:(Eio.Stdenv.stderr env)
-           { table; counts; wp; slow_pug = options.slow_pug; template_script = options.template_script }
-           root );
+           {
+             table;
+             counts;
+             wp;
+             slow_pug = options.slow_pug;
+             template_script = options.template_script;
+             root = root_slash;
+           }
+           root_noslash );
     table, counts
   in
 

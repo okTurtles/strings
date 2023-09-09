@@ -2,7 +2,6 @@ open! Core
 
 type t = {
   path: string;
-  filename: string;
   strings: string Queue.t;
   possible_scripts: string Queue.t;
   analyzed_possible_scripts: int;
@@ -13,7 +12,6 @@ type t = {
 let create ~path =
   {
     path;
-    filename = Filename.basename path;
     strings = Queue.create ();
     possible_scripts = Queue.create ();
     analyzed_possible_scripts = 0;
