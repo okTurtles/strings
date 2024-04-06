@@ -53,7 +53,7 @@
 (rule
   (targets libomp.a)
   (action (bash "
-    cp /usr/local/Cellar/libomp/16.0.5/lib/libomp.a . &> /dev/null \
+    cp /usr/local/Cellar/libomp/17.0.6/lib/libomp.a . &> /dev/null \
     || cp /usr/lib/libgomp.a libomp.a
   "))
   (mode standard)

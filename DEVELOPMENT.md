@@ -5,7 +5,8 @@ From the root of the repo:
 ```sh
 brew install opam libomp llvm
 
-opam switch create . ocaml-variants.5.0.0+options --deps-only -t
+opam switch create . ocaml-variants.5.1.1+options --no-install
+opam install . --deps-only -t
 
 # Remove old Flow version
 rm -rf flow && unlink src/flow_parser && unlink src/sedlex && unlink src/collections

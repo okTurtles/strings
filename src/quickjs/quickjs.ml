@@ -14,33 +14,12 @@ external stub_init_contexts : int -> (unit, string) Result.t = "stub_init_contex
 external stub_extract : int -> string -> fn_name:string -> (string array * string array, string) Result.t
   = "stub_extract"
 
-module Pool : sig
-  type t
-
-  val create : int -> t
-
-  val with_pool : t -> f:(int -> 'a) -> 'a
-end = struct
-  type t = int Eio.Stream.t
-
-  let create n =
-    let stream = Eio.Stream.create n in
-    for i = 0 to n - 1 do
-      Eio.Stream.add stream i
-    done;
-    stream
-
-  let with_pool stream ~f =
-    let id = Eio.Stream.take stream in
-    let result =
-      try f id with
-      | exn ->
-        Eio.Stream.add stream id;
-        raise exn
-    in
-    Eio.Stream.add stream id;
-    result
-end
+let pool =
+  let i = ref 0 in
+  Eio.Pool.create Utils.Io.num_js_workers @@ fun () ->
+  let x = !i in
+  incr i;
+  x
 
 let init_time = Atomic.make Int63.zero
 
@@ -57,7 +36,7 @@ let init_contexts =
 
       let time = time `Stop in
       Atomic.set init_time time;
-      Promise.resolve w (Pool.create num_js_workers);
+      Promise.resolve w pool;
       print_endline
         (sprintf
            !"✅ [%{Int63}ms] Initialized %d JS runtimes for TS and/or Pug processing\n"
@@ -101,7 +80,7 @@ let extract kind code =
     | Pug -> clean_pug code
   in
   let fn_name = fn_name_of_kind kind in
-  Pool.with_pool pool ~f:(fun id -> stub_extract id code ~fn_name)
+  Eio.Pool.use pool (fun id -> stub_extract id code ~fn_name)
 
 let extract_to_collector (collector : Utils.Collector.t) kind code =
   match extract kind code with

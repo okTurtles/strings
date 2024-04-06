@@ -1,7 +1,7 @@
 open! Core
 open Eio.Std
 
-let version = "2.3.0"
+let version = "2.4.0"
 
 type counts = {
   vue: int ref;
@@ -33,7 +33,7 @@ type file_type =
 type traversal = {
   table: String.Set.t String.Table.t;
   counts: counts;
-  wp: Eio.Workpool.t;
+  wp: Eio.Executor_pool.t;
   slow_pug: bool;
   template_script: Vue.template_script;
   root: string;
@@ -96,19 +96,23 @@ let process_job ({ path; _ } as job) =
 
   Vue.collect_from_possible_scripts collector job.template_script
 
-let rec traverse ~fs ~stderr ({ slow_pug; template_script; counts; wp; _ } as traversal) directory =
+let rec traverse ~fs ~stderr ({ slow_pug; template_script; counts; _ } as traversal) directory =
   Eio.Path.with_open_dir Eio.Path.(fs / directory) Eio.Path.read_dir
   |> Fiber.List.iter (fun filename ->
        let path = Filename.concat directory filename in
-       match filename, Utils.Io.stat wp path with
+       let eio_path = Eio.Path.(fs / path) in
+       match filename, Eio.Path.kind ~follow:true eio_path with
        | "node_modules", _ -> ()
-       | _, { st_kind = S_DIR; _ } -> traverse ~fs ~stderr traversal path
-       | _, { st_kind = S_REG; _ } -> (
+       | _, `Directory -> traverse ~fs ~stderr traversal path
+       | _, `Regular_file -> (
          match file_type_of_filename filename with
          | None -> ()
          | Some file_type ->
-           let job = { file_type; eio_path = Eio.Path.(fs / path); path; template_script; slow_pug } in
-           let collector = Eio.Workpool.submit_exn traversal.wp (fun () -> process_job job) in
+           let job = { file_type; eio_path; path; template_script; slow_pug } in
+           let collector =
+             Eio.Executor_pool.submit_exn traversal.wp ~weight:Utils.Io.traversal_jobs_weight (fun () ->
+               process_job job )
+           in
            let count =
              match job.file_type with
              | JS -> counts.js
@@ -134,7 +138,7 @@ let main env options = function
       let languages = Vue.parse ~path ~slow_pug flow in
       Vue.debug_template ~stdout ~path languages template_script lang
     | Pug, ".pug" -> (
-      let source = Utils.Io.load_flow flow in
+      let source = Eio.Flow.read_all flow in
       let slow_parse () =
         let collector = Utils.Collector.create ~path in
         Quickjs.extract_to_collector collector Pug source;
@@ -164,27 +168,22 @@ let main env options = function
     | _ -> Eio.Flow.copy_string (sprintf "Nothing to do for file [%s]\n" path) stdout )
 | Run ->
   let overall_time = Utils.Timing.start () in
-  Switch.run @@ fun sw ->
   let outdir = options.outdir in
   if List.is_empty options.targets then failwith "Please specify at least one directory";
   let fs = Eio.Stdenv.fs env in
   let stdout = Eio.Stdenv.stdout env in
-  let sys_wp =
-    Eio.Workpool.create ~sw ~domain_count:Utils.Io.num_systhreads ~domain_concurrency:1
-      (Eio.Stdenv.domain_mgr env)
-  in
   (* Check current directory *)
   let strings_dir_files =
     let git_dir, strings_dir =
       Fiber.pair
-        (fun () -> Utils.Io.directory_exists sys_wp ".git")
-        (fun () -> Utils.Io.directory_exists sys_wp outdir)
+        (fun () -> Eio.Path.is_directory Eio.Path.(fs / ".git"))
+        (fun () -> Eio.Path.is_directory Eio.Path.(fs / outdir))
     in
     if not (git_dir || strings_dir) then failwith "This program must be run from the root of your project";
     match strings_dir with
     | true -> Eio.Path.with_open_dir Eio.Path.(fs / outdir) Eio.Path.read_dir
     | false ->
-      Utils.Io.mkdir_p env sys_wp ~dir_name:outdir ~perms:0o751;
+      Eio.Path.mkdirs ~exists_ok:true ~perm:0o751 Eio.Path.(fs / outdir);
       []
   in
 
@@ -194,10 +193,7 @@ let main env options = function
     let table = String.Table.create () in
     let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0 } in
     Switch.run @@ fun sw ->
-    let wp =
-      Eio.Workpool.create ~sw ~domain_count:Utils.Io.num_cores
-        ~domain_concurrency:Utils.Io.traversal_jobs_per_core (Eio.Stdenv.domain_mgr env)
-    in
+    let wp = Eio.Executor_pool.create ~sw ~domain_count:Utils.Io.num_cores (Eio.Stdenv.domain_mgr env) in
     options.targets
     |> Fiber.List.iter (fun directory ->
          let root_slash, root_noslash =
@@ -242,9 +238,10 @@ let main env options = function
         | Some "english" -> ()
         | Some language -> (
           let path = Filename.concat outdir filename in
-          match Utils.Io.stat sys_wp path with
-          | { st_kind = S_REG; _ } ->
-            let other = Eio.Path.with_open_in Eio.Path.(fs / path) (Parsing.Strings.parse ~path) in
+          let eio_path = Eio.Path.(fs / path) in
+          match Eio.Path.kind ~follow:true eio_path with
+          | `Regular_file ->
+            let other = Eio.Path.with_open_in eio_path (Parsing.Strings.parse ~path) in
             Generate.write_other ~fs ~stdout ~version ~outdir ~language english other
           | _ -> () )
         | None -> ())
