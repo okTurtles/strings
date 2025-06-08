@@ -3,11 +3,11 @@ open SZXX
 
 type t = Xml.DOM.element [@@deriving sexp_of]
 
-let collect Utils.Collector.{ strings; possible_scripts; _ } top =
+let collect Utils.Collector.{ strings; needle_names = _, element_name; possible_scripts; _ } top =
   let rec loop (node : Xml.DOM.element) =
     (match node with
     | { text = ""; _ } -> ()
-    | { tag = "i18n"; text; _ } -> Queue.enqueue strings text
+    | { tag; text; _ } when String.( = ) tag element_name -> Queue.enqueue strings text
     | { text; _ } -> Queue.enqueue possible_scripts text);
     List.iter node.attrs ~f:(function
       | "class", _

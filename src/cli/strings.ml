@@ -1,7 +1,7 @@
 open! Core
 open Eio.Std
 
-let version = "2.4.0"
+let version = "2.3.0"
 
 type counts = {
   vue: int ref;
@@ -14,6 +14,7 @@ type counts = {
 type common_options = {
   outdir: string;
   targets: string list;
+  needle_names: string * string;
   template_script: Vue.template_script;
   slow_pug: bool;
   show_debugging: bool;
@@ -34,6 +35,7 @@ type traversal = {
   table: String.Set.t String.Table.t;
   counts: counts;
   wp: Eio.Executor_pool.t;
+  needle_names: string * string;
   slow_pug: bool;
   template_script: Vue.template_script;
   root: string;
@@ -43,6 +45,7 @@ type job = {
   file_type: file_type;
   eio_path: [< Eio.Fs.dir_ty ] Eio.Path.t;
   path: string;
+  needle_names: string * string;
   template_script: Vue.template_script;
   slow_pug: bool;
 }
@@ -66,22 +69,22 @@ let reduce_collector ~stderr table count collector ~root =
       | None -> Set.add String.Set.empty relpath
       | Some set -> Set.add set relpath ) )
 
-let process_job ({ path; _ } as job) =
-  let collector = Utils.Collector.create ~path in
+let process_job ({ path; needle_names; _ } as job) =
+  let collector = Utils.Collector.create ~path ~needle_names in
   (match job with
   | { file_type = JS; eio_path; _ } ->
     let source = Eio.Path.load eio_path in
-    Parsing.Js.extract_to_collector collector source
+    Parsing.Js.extract_to_collector collector ~source
   | { file_type = TS; eio_path; _ } ->
     let source = Eio.Path.load eio_path in
-    Quickjs.extract_to_collector collector Typescript source
+    Quickjs.extract_to_collector collector Typescript ~source
   | { file_type = VUE; eio_path; slow_pug; _ } ->
     Eio.Path.with_open_in eio_path @@ fun flow ->
-    let languages = Vue.parse ~path ~slow_pug flow in
+    let languages = Vue.parse ~path ~needle_names ~slow_pug flow in
     Vue.collect_from_languages collector languages
   | { file_type = PUG; eio_path; slow_pug; _ } -> (
     let source = Eio.Path.load eio_path in
-    let slow_parse () = Quickjs.extract_to_collector collector Pug source in
+    let slow_parse () = Quickjs.extract_to_collector collector Pug ~source in
     match slow_pug with
     | true -> slow_parse ()
     | false ->
@@ -96,7 +99,8 @@ let process_job ({ path; _ } as job) =
 
   Vue.collect_from_possible_scripts collector job.template_script
 
-let rec traverse ~fs ~stderr ({ slow_pug; template_script; counts; _ } as traversal) directory =
+let rec traverse ~fs ~stderr ({ needle_names; slow_pug; template_script; counts; _ } as traversal)
+  directory =
   Eio.Path.with_open_dir Eio.Path.(fs / directory) Eio.Path.read_dir
   |> Fiber.List.iter (fun filename ->
        let path = Filename.concat directory filename in
@@ -108,7 +112,7 @@ let rec traverse ~fs ~stderr ({ slow_pug; template_script; counts; _ } as traver
          match file_type_of_filename filename with
          | None -> ()
          | Some file_type ->
-           let job = { file_type; eio_path; path; template_script; slow_pug } in
+           let job = { file_type; eio_path; path; needle_names; template_script; slow_pug } in
            let collector =
              Eio.Executor_pool.submit_exn traversal.wp ~weight:Utils.Io.traversal_jobs_weight (fun () ->
                process_job job )
@@ -131,18 +135,18 @@ let main env options = function
   let stdout = Eio.Stdenv.stdout env in
   List.iter options.targets ~f:(fun path ->
     Eio.Flow.copy_string (sprintf "\n>>> Debugging [%s]\n" path) stdout;
-    let ({ slow_pug; template_script; _ } : common_options) = options in
+    let ({ needle_names; slow_pug; template_script; _ } : common_options) = options in
     Eio.Path.with_open_in Eio.Path.(fs / path) @@ fun flow ->
     match lang, String.slice path (-4) 0 with
     | _, ".vue" ->
-      let languages = Vue.parse ~path ~slow_pug flow in
-      Vue.debug_template ~stdout ~path languages template_script lang
+      let languages = Vue.parse ~path ~needle_names ~slow_pug flow in
+      Vue.debug_template ~stdout ~path ~needle_names languages template_script lang
     | Pug, ".pug" -> (
       let source = Eio.Flow.read_all flow in
       let slow_parse () =
-        let collector = Utils.Collector.create ~path in
-        Quickjs.extract_to_collector collector Pug source;
-        Vue.debug_template ~stdout ~path
+        let collector = Utils.Collector.create ~path ~needle_names in
+        Quickjs.extract_to_collector collector Pug ~source;
+        Vue.debug_template ~stdout ~path ~needle_names
           [ Pug { collector; length = String.length source } ]
           template_script lang
       in
@@ -150,7 +154,9 @@ let main env options = function
       | true -> slow_parse ()
       | false ->
         let on_ok parsed =
-          Vue.debug_template ~stdout ~path [ Pug_native { parsed; length = None } ] template_script lang
+          Vue.debug_template ~stdout ~path ~needle_names
+            [ Pug_native { parsed; length = None } ]
+            template_script lang
         in
         let on_error ~msg =
           Eio.Flow.copy_string
@@ -164,7 +170,8 @@ let main env options = function
       let on_ok parsed =
         Vue.debug_template ~stdout ~path [ Html { parsed; length = None } ] template_script lang
       in
-      Parsing.Basic.exec_parser_eio ~on_ok Parsing.Html.parser ~path ~language_name:"Pug" flow
+      Parsing.Basic.exec_parser_eio ~on_ok Parsing.Html.parser ~path ~needle_names ~language_name:"Pug"
+        flow
     | _ -> Eio.Flow.copy_string (sprintf "Nothing to do for file [%s]\n" path) stdout )
 | Run ->
   let overall_time = Utils.Timing.start () in
@@ -206,6 +213,7 @@ let main env options = function
              table;
              counts;
              wp;
+             needle_names = options.needle_names;
              slow_pug = options.slow_pug;
              template_script = options.template_script;
              root = root_slash;
@@ -261,6 +269,12 @@ let () =
         ~doc:
           "Use this option if your HTML/Pug files use TypeScript as their scripting language in element \
            attributes like onClick=\"\""
+    and function_name =
+      flag_optional_with_default_doc "--fname" ~aliases:[ "-f" ] ~full_flag_required:() string
+        [%sexp_of: string] ~default:"L" ~doc:"FNAME Change the default localization function name."
+    and element_name =
+      flag_optional_with_default_doc "--tname" ~aliases:[ "-t" ] ~full_flag_required:() string
+        [%sexp_of: string] ~default:"i18n" ~doc:"TNAME Change the default localization tag name."
     and slow_pug =
       flag "--slow-pug" ~aliases:[ "--sp" ] ~full_flag_required:() no_arg
         ~doc:
@@ -269,7 +283,14 @@ let () =
     and show_debugging =
       flag "--show-debugging" ~full_flag_required:() no_arg ~doc:"Use this option when reporting bugs."
     in
-    { outdir; targets; template_script = (if use_ts then TS else JS); slow_pug; show_debugging }
+    {
+      outdir;
+      targets;
+      needle_names = function_name, element_name;
+      template_script = (if use_ts then TS else JS);
+      slow_pug;
+      show_debugging;
+    }
   in
   let action =
     let open Param in

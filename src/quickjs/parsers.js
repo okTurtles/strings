@@ -2,11 +2,11 @@
 
 const { createSourceFile, ScriptTarget, SyntaxKind, forEachChild } = require('typescript')
 
-globalThis.extractFromTypeScript = function (code) {
+globalThis.extractFromTypeScript = function (code, functionName) {
   const acc = []
   function traverse (node) {
     if (node.kind === SyntaxKind.CallExpression &&
-      node.expression.escapedText === 'L' &&
+      node.expression.escapedText === functionName &&
       node.arguments.length >= 1 &&
       node.arguments[0].kind === SyntaxKind.StringLiteral
     ) {
@@ -39,7 +39,7 @@ const lex = require('pug-lexer')
 const parse = require('pug-parser')
 const walk = require('pug-walk')
 
-globalThis.extractFromPug = function (code) {
+globalThis.extractFromPug = function (code, elementName) {
   const ast = parse(lex(code))
   const accStrings = {}
   const accPossibleScripts = []
@@ -55,7 +55,7 @@ globalThis.extractFromPug = function (code) {
       case 'Tag':
       case 'Filter':
         node.attrs.forEach(({ val }) => addAttr(val))
-        if (node.name === 'i18n') {
+        if (node.name === elementName) {
           node.block.nodes.forEach(({ type, val }) => {
             if (type === 'Text' && val !== '') {
               accStrings[val] = true

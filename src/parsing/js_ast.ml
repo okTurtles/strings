@@ -1,7 +1,7 @@
 open! Core
 open Flow_ast
 
-let extract ~on_string stmts =
+let extract ~on_string ~function_name stmts =
   let rec extract_expr_or_spread = function
     | Expression.Expression expr -> extract_expression expr
     | Expression.Spread (_, { argument; comments = _ }) -> extract_expression argument
@@ -158,11 +158,12 @@ let extract ~on_string stmts =
     | ( _,
         Expression.Call
           {
-            callee = _, Expression.Identifier (_, Identifier.{ name = "L"; comments = _ });
+            callee = _, Expression.Identifier (_, Identifier.{ name; comments = _ });
             arguments = _, { arguments; comments = _ };
             targs;
             comments = _;
-          } ) ->
+          } )
+      when String.( = ) name function_name ->
       List.iter arguments ~f:(function
         | Expression.Expression (_, Expression.Literal { value = String s; raw = _; comments = _ }) ->
           on_string s

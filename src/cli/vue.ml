@@ -28,15 +28,15 @@ module Language = struct
     | Css of int
     | Failed of string
 
-  let of_source ~path ~slow_pug : Source.t -> t = function
+  let of_source ~path ~needle_names ~slow_pug : Source.t -> t = function
   | Template (Template.HTML source) ->
     let on_ok parsed = Html { parsed; length = Some (String.length source) } in
     let on_error ~msg = Failed msg in
     Basic.exec_parser ~on_ok ~on_error Html.parser ~path ~language_name:"HTML" source
   | Template (Template.PUG source) -> (
     let slow_parse () =
-      let collector = Utils.Collector.create ~path in
-      Quickjs.extract_to_collector collector Pug source;
+      let collector = Utils.Collector.create ~path ~needle_names in
+      Quickjs.extract_to_collector collector Pug ~source;
       Pug { collector; length = String.length source }
     in
     match slow_pug with
@@ -62,14 +62,14 @@ module Debug = struct
     | Html
 end
 
-let collect_from_possible_scripts Utils.Collector.({ possible_scripts; strings; _ } as collector)
-  template_script =
+let collect_from_possible_scripts
+  Utils.Collector.({ needle_names; possible_scripts; strings; _ } as collector) template_script =
   let on_string = Queue.enqueue strings in
   Queue.iter possible_scripts ~f:(fun raw ->
     match template_script with
-    | JS -> Js.extract raw ~on_string
+    | JS -> Js.extract ~on_string ~function_name:(fst needle_names) ~source:raw
     | TS -> (
-      match Quickjs.extract Typescript raw with
+      match Quickjs.extract Typescript ~needle_names ~source:raw with
       | Error _ -> ()
       | Ok (strings, _) -> Array.iter strings ~f:on_string ) );
   Utils.Collector.analyzed_possible_scripts collector
@@ -80,13 +80,13 @@ let collect_from_languages collector languages =
       | Language.Html { parsed; length = _ } -> Html.collect collector parsed
       | Pug_native { parsed; length = _ } -> Pug.collect collector parsed
       | Pug { collector = src; length = _ } -> Utils.Collector.blit_transfer ~src ~dst:collector
-      | Js source -> Js.extract_to_collector collector source
-      | Ts source -> Quickjs.extract_to_collector collector Typescript source
+      | Js source -> Js.extract_to_collector collector ~source
+      | Ts source -> Quickjs.extract_to_collector collector Typescript ~source
       | Css _ -> ()
       | Failed msg -> Queue.enqueue collector.file_errors msg)
     languages
 
-let debug_template ~stdout ~path languages template_script target =
+let debug_template ~stdout ~path ~needle_names languages template_script target =
   let print_collector ~error_kind collector =
     let Utils.Collector.{ strings; file_errors; _ } =
       collect_from_possible_scripts collector template_script
@@ -110,13 +110,13 @@ let debug_template ~stdout ~path languages template_script target =
       Eio.Flow.copy_string (sprintf "<TS Code - %d bytes>\n" (String.length source)) stdout
     | Css length, _ -> Eio.Flow.copy_string (sprintf "<CSS Code - %d bytes>\n" length) stdout
     | Html { parsed; length = _ }, Html ->
-      let collector = Utils.Collector.create ~path in
+      let collector = Utils.Collector.create ~path ~needle_names in
       Eio.Flow.copy_string (sprintf !"%{sexp#hum: Html.t}" parsed) stdout;
       collect_from_languages collector [ lang ];
       print_collector ~error_kind:"HTML" collector
     | (Pug_native { parsed; length = _ } as lang), Pug ->
       Eio.Flow.copy_string (sprintf !"%{sexp#hum: Pug.t}" parsed) stdout;
-      let collector = Utils.Collector.create ~path in
+      let collector = Utils.Collector.create ~path ~needle_names in
       collect_from_languages collector [ lang ];
       print_collector ~error_kind:"Pug" collector
     | Pug { collector; length = _ }, Pug -> print_collector ~error_kind:"Pug" collector
@@ -129,7 +129,7 @@ let debug_template ~stdout ~path languages template_script target =
     | Pug { length; _ }, Html -> Eio.Flow.copy_string (sprintf "<Pug code - %d bytes>" length) stdout
     | Failed msg, _ -> Eio.Flow.copy_string (sprintf "❌ Parsing error in path: %s" msg) stdout )
 
-let parse ~path ~slow_pug flow =
+let parse ~path ~needle_names ~slow_pug flow =
   let buf = Buffer.create 256 in
   let parser =
     let open Angstrom in
@@ -144,5 +144,5 @@ let parse ~path ~slow_pug flow =
     in
     mlws *> sep_by mlws languages <* mlws
   in
-  let on_ok ll = Fiber.List.map (Language.of_source ~path ~slow_pug) ll in
+  let on_ok ll = Fiber.List.map (Language.of_source ~path ~needle_names ~slow_pug) ll in
   Basic.exec_parser_eio ~on_ok parser ~path ~language_name:"Vue" flow

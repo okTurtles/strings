@@ -16,15 +16,16 @@ let parse_error = function
 | Second msg -> msg
 
 let debug statements =
-  sprintf "Statements: %s"
-    ( List.map statements ~f:(fun stmt ->
-        Format.asprintf "%a" (Flow_ast.Statement.pp (fun _ _ -> ()) (fun _ _ -> ())) stmt )
-    |> String.concat ~sep:", " )
-  |> print_endline
+  let pp fmt ll =
+    List.iteri ll ~f:(fun i stmt ->
+      if i > 0 then Format.pp_print_string fmt ", ";
+      Format.fprintf fmt "%a" (Flow_ast.Statement.pp (fun _ _ -> ()) (fun _ _ -> ())) stmt )
+  in
+  Format.printf "Statements: %a" pp statements
 
 let parse_options = Some { Parser_env.default_parse_options with esproposal_export_star_as = true }
 
-let parse ~path source =
+let parse ~path ~source =
   match Parser_flow.program ~parse_options source with
   | _, (_ :: _ as errors) -> Error (lazy (errors_to_string errors))
   | ast, [] -> (
@@ -39,19 +40,20 @@ let parse ~path source =
         )
 
 let unescape source =
-  match parse ~path:"attribute" source with
+  match parse ~path:"attribute" ~source with
   | Ok stmts -> (
     match Js_ast.unescape stmts with
     | Some s -> s
     | None -> source )
   | Error _ -> source
 
-let extract source ~on_string =
-  match parse ~path:"attribute" source with
-  | Ok stmts -> Js_ast.extract ~on_string stmts
+let extract ~on_string ~function_name ~source =
+  match parse ~path:"attribute" ~source with
+  | Ok stmts -> Js_ast.extract ~on_string ~function_name stmts
   | Error _ -> ()
 
-let extract_to_collector ({ path; strings; file_errors; _ } : Utils.Collector.t) source =
-  match parse ~path source with
-  | Ok stmts -> Js_ast.extract ~on_string:(Queue.enqueue strings) stmts
+let extract_to_collector
+  ({ path; needle_names = function_name, _; strings; file_errors; _ } : Utils.Collector.t) ~source =
+  match parse ~path ~source with
+  | Ok stmts -> Js_ast.extract ~on_string:(Queue.enqueue strings) ~function_name stmts
   | Error (lazy msg) -> Queue.enqueue file_errors msg

@@ -2,6 +2,7 @@ open! Core
 
 type t = {
   path: string;
+  needle_names: string * string;
   strings: string Queue.t;
   possible_scripts: string Queue.t;
   analyzed_possible_scripts: int;
@@ -9,9 +10,10 @@ type t = {
 }
 [@@deriving sexp]
 
-let create ~path =
+let create ~path ~needle_names =
   {
     path;
+    needle_names;
     strings = Queue.create ();
     possible_scripts = Queue.create ();
     analyzed_possible_scripts = 0;

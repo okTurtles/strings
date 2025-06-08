@@ -5,25 +5,29 @@ type kind =
   | Typescript
   | Pug
 
-let fn_name_of_kind = function
+let fn_call_of_kind = function
 | Typescript -> "extractFromTypeScript"
 | Pug -> "extractFromPug"
 
 external stub_init_contexts : int -> (unit, string) Result.t = "stub_init_contexts"
 
-external stub_extract : int -> string -> fn_name:string -> (string array * string array, string) Result.t
-  = "stub_extract"
-
-let pool =
-  let i = ref 0 in
-  Eio.Pool.create Utils.Io.num_js_workers @@ fun () ->
-  let x = !i in
-  incr i;
-  x
+external stub_extract :
+  int ->
+  string ->
+  fn_call:string ->
+  function_name:string ->
+  (string array * string array, string) Result.t = "stub_extract"
 
 let init_time = Atomic.make Int63.zero
 
 let init_contexts =
+  let pool =
+    let i = ref 0 in
+    Eio.Pool.create Utils.Io.num_js_workers @@ fun () ->
+    let x = !i in
+    incr i;
+    x
+  in
   let initialized = Atomic.make None in
   let p, w = Promise.create () in
   let cell = Some p in
@@ -72,18 +76,19 @@ let clean_pug code =
   | 0 -> code
   | shift -> String.substr_replace_all code ~pattern:(sprintf "\n%s" (String.make shift ' ')) ~with_:"\n"
 
-let extract kind code =
+let extract kind ~needle_names:(function_name, element_name) ~source =
   let pool = Promise.await (init_contexts ()) in
-  let code =
+  let source, function_name =
     match kind with
-    | Typescript -> code
-    | Pug -> clean_pug code
+    | Typescript -> source, function_name
+    | Pug -> clean_pug source, element_name
   in
-  let fn_name = fn_name_of_kind kind in
-  Eio.Pool.use pool (fun id -> stub_extract id code ~fn_name)
+  let fn_call = fn_call_of_kind kind in
+  Eio.Pool.use pool (fun id -> stub_extract id source ~fn_call ~function_name)
 
-let extract_to_collector (collector : Utils.Collector.t) kind code =
-  match extract kind code with
+let extract_to_collector collector kind ~source =
+  let Utils.Collector.{ needle_names; _ } = collector in
+  match extract kind ~needle_names ~source with
   | Error msg -> Queue.enqueue collector.file_errors msg
   | Ok (strings, possible_scripts) ->
     Array.iter strings ~f:(Queue.enqueue collector.strings);

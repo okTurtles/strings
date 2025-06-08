@@ -82,13 +82,14 @@ value convert_string_array(JSContext* const ctx, const JSValue& jspair, const st
 }
 
 extern "C"
-value stub_extract(value v_id, value v_code, value v_fn_name)
+value stub_extract(value v_id, value v_code, value v_fn_call, value v_function_name)
 {
-  CAMLparam3(v_id, v_code, v_fn_name);
+  CAMLparam4(v_id, v_code, v_fn_call, v_function_name);
   CAMLlocal4(v_ret, v_field, v_arr1, v_arr2);
   int id { Int_val(v_id) };
   string code { String_val(v_code), caml_string_length(v_code) };
-  string fn_name { String_val(v_fn_name), caml_string_length(v_fn_name) };
+  string fn_call { String_val(v_fn_call), caml_string_length(v_fn_call) };
+  string function_name { String_val(v_function_name), caml_string_length(v_function_name) };
 
   caml_release_runtime_system();
 
@@ -99,13 +100,19 @@ value stub_extract(value v_id, value v_code, value v_fn_name)
   }
   JS_UpdateStackTop(JS_GetRuntime(ctx));
 
-  JSValue code_val { JS_NewStringLen(ctx, code.c_str(), code.length()) };
+  JSValue argv[] = {
+    JS_NewStringLen(ctx, code.c_str(), code.length()),
+    JS_NewStringLen(ctx, function_name.c_str(), function_name.length())
+  };
+  int argc = static_cast<int>(sizeof (argv) / sizeof (*argv));
   JSValue global_obj { JS_GetGlobalObject(ctx) };
-  JSValue fun { JS_GetPropertyStr(ctx, global_obj, fn_name.c_str()) };
-  JSValue ret_val { JS_Call(ctx, fun, JS_NULL, 1, &code_val) };
+  JSValue fun { JS_GetPropertyStr(ctx, global_obj, fn_call.c_str()) };
+  JSValue ret_val { JS_Call(ctx, fun, JS_NULL, argc, argv) };
   JS_FreeValue(ctx, fun);
   JS_FreeValue(ctx, global_obj);
-  JS_FreeValue(ctx, code_val);
+  for (int i = 0; i < argc; i++) {
+    JS_FreeValue(ctx, argv[i]);
+  }
 
   if (JS_IsException(ret_val)) {
     caml_acquire_runtime_system();

@@ -33,10 +33,10 @@ type lines = (int * line) list [@@deriving yojson, sexp_of]
 
 type t = node array [@@deriving yojson, sexp_of]
 
-let collect Utils.Collector.{ strings; possible_scripts; _ } nodes =
+let collect Utils.Collector.{ strings; possible_scripts; needle_names = _, element_name; _ } nodes =
   let rec loop { selector; arguments; text; children } =
     (match text, selector with
-    | Some s, Element { parts = "i18n" :: _ } -> Queue.enqueue strings s
+    | Some s, Element { parts = el :: _ } when String.( = ) el element_name -> Queue.enqueue strings s
     | Some s, _ -> Queue.enqueue possible_scripts s
     | None, _ -> ());
     List.iter arguments ~f:(function
