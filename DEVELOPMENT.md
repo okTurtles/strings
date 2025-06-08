@@ -3,7 +3,7 @@
 ### Setup
 From the root of the repo:
 ```sh
-brew install opam libomp mold
+brew install opam libomp
 
 opam switch create . ocaml-variants.5.0.0+options --no-install
 opam install . --deps-only -t

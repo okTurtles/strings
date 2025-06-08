@@ -103,9 +103,9 @@ let debug_template ~path languages template_script target =
       collect_from_possible_scripts collector template_script ~on_string:(Queue.enqueue strings)
     in
     let buf = Buffer.create 256 in
-    let deduped = Queue.fold strings ~init:String.Set.empty ~f:String.Set.add in
-    let* () = Lwt_io.printlf "Found %d strings:" (String.Set.length deduped) in
-    String.Set.iter deduped ~f:(fun s -> bprintf buf !"%{Yojson.Basic}\n" (`String s));
+    let deduped = Queue.fold strings ~init:String.Set.empty ~f:Set.add in
+    let* () = Lwt_io.printlf "Found %d strings:" (Set.length deduped) in
+    Set.iter deduped ~f:(fun s -> bprintf buf !"%{Yojson.Basic}\n" (`String s));
     if not (Queue.is_empty file_errors)
     then (
       bprintf buf "\n❌ %s errors in %s:\n" error_kind path;

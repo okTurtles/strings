@@ -55,7 +55,7 @@
 (rule
   (targets libomp.a)
   (action (bash "
-    cp /usr/local/Cellar/libomp/15.0.7/lib/libomp.a . &> /dev/null \
+    cp /opt/homebrew/Cellar/libomp/20.1.6/lib/libomp.a . &> /dev/null \
     || cp /usr/lib/libgomp.a libomp.a
   "))
   (mode standard)

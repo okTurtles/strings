@@ -13,7 +13,7 @@ homepage: "https://github.com/okTurtles/strings"
 doc: "https://github.com/okTurtles/strings"
 bug-reports: "https://github.com/okTurtles/strings/issues"
 depends: [
-  "ocaml" { = "5.0.0" }
+  "ocaml" { = "5.1.1" }
   "ocaml-option-flambda"
   "dune" { >= "2.8.0"}
 
@@ -22,8 +22,8 @@ depends: [
 
   "angstrom"
   "angstrom-lwt-unix"
-  "core" { >= "v0.15.0" }
-  "core_unix" { >= "v0.15.0" }
+  "core" { >= "v0.16.0" }
+  "core_unix" { >= "v0.16.0" }
   "lwt"
   "ppx_deriving"
   "ppx_deriving_yojson"
@@ -33,5 +33,5 @@ depends: [
   "yojson"
   "uuidm"
   "wtf8"
-  "SZXX" { >= "2.3.0" }
+  "SZXX" { = "3.1.0" }
 ]

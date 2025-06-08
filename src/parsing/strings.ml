@@ -49,6 +49,6 @@ let parse ~path ic =
       ~language_name:".strings" ic
   in
   List.iter lines ~f:(function
-    | Translation (x, y) -> String.Table.set table ~key:x ~data:y
+    | Translation (x, y) -> Hashtbl.set table ~key:x ~data:y
     | Comment -> () );
   table

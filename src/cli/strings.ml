@@ -55,9 +55,9 @@ let process_file traversal count filename ~f:get_collector =
     in
     let handler string =
       let realname = String.slice filename traversal.rootlen 0 in
-      String.Table.update traversal.table string ~f:(function
-        | None -> String.Set.add String.Set.empty realname
-        | Some set -> String.Set.add set realname )
+      Hashtbl.update traversal.table string ~f:(function
+        | None -> Set.add String.Set.empty realname
+        | Some set -> Set.add set realname )
     in
     let* () =
       Utils.Collector.render_errors collector
@@ -148,10 +148,9 @@ let write_english ~outdir english =
         let* () =
           (* Switch to a map to preserve order as much as possible and therefore reduce merge conflicts *)
           let map =
-            String.Table.fold english ~init:String.Map.empty ~f:(fun ~key ~data acc ->
-              String.Map.set acc ~key ~data )
+            Hashtbl.fold english ~init:String.Map.empty ~f:(fun ~key ~data acc -> Map.set acc ~key ~data)
           in
-          String.Map.fold map ~init:Lwt.return_unit ~f:(fun ~key ~data acc ->
+          Map.fold map ~init:Lwt.return_unit ~f:(fun ~key ~data acc ->
             let fmt_key = fmt key in
             let output_strings = sprintf "/* %s */\n%s = %s;\n\n" data fmt_key fmt_key in
             let output_json = json_pair fmt_key fmt_key first in
@@ -162,7 +161,7 @@ let write_english ~outdir english =
   in
   Lwt_io.printlf
     !"✅ [%{Int63}ms] Generated '%s' and '%s' with:\n- %d unique strings\n"
-    (time `Stop) path_strings path_json (String.Table.length english)
+    (time `Stop) path_strings path_json (Hashtbl.length english)
 
 let write_other ~outdir ~language english other =
   let time = Utils.Timing.start () in
@@ -175,7 +174,7 @@ let write_other ~outdir ~language english other =
         let other_only = ref String.Map.empty in
         let both = ref String.Map.empty in
         let add_entry map_ref ~line_strings ~line_json =
-          map_ref := String.Map.set !map_ref ~key:line_strings ~data:line_json;
+          map_ref := Map.set !map_ref ~key:line_strings ~data:line_json;
           None
         in
         let missing_translation key x =
@@ -184,7 +183,7 @@ let write_other ~outdir ~language english other =
           add_entry english_only ~line_strings ~line_json:(fmt_key, fmt_key)
         in
         let _table =
-          String.Table.merge english other ~f:(fun ~key -> function
+          Hashtbl.merge english other ~f:(fun ~key -> function
             | `Left x -> missing_translation key x
             | `Both (x, y) when String.(key = y) -> missing_translation key x
             | `Both (x, y) ->
@@ -201,7 +200,7 @@ let write_other ~outdir ~language english other =
         let first = ref true in
         let* () = Lwt.join [ Lwt_io.write oc_strings header; Lwt_io.write_char oc_json '{' ] in
         let write_pairs map =
-          String.Map.fold map ~init:(Lwt.return 0) ~f:(fun ~key:line_strings ~data:(x, y) acc ->
+          Map.fold map ~init:(Lwt.return 0) ~f:(fun ~key:line_strings ~data:(x, y) acc ->
             let* () =
               Lwt_io.write oc_strings line_strings <&> Lwt_io.write oc_json (json_pair x y first)
             in
@@ -210,7 +209,7 @@ let write_other ~outdir ~language english other =
         let* n_left = write_pairs !english_only in
         let* n_both = write_pairs !both in
         let* n_right =
-          String.Map.fold !other_only ~init:(Lwt.return 0) ~f:(fun ~key:line_strings ~data:() acc ->
+          Map.fold !other_only ~init:(Lwt.return 0) ~f:(fun ~key:line_strings ~data:() acc ->
             let* () = Lwt_io.write oc_strings line_strings in
             acc >|= succ )
         in
@@ -298,9 +297,7 @@ let main options = function
           traverse traversal root)
         options.targets
     in
-    let english =
-      String.Table.map table ~f:(fun set -> String.Set.to_array set |> String.concat_array ~sep:", ")
-    in
+    let english = Hashtbl.map table ~f:(fun set -> Set.to_array set |> String.concat_array ~sep:", ") in
     let* () =
       let f ext i = sprintf "%d %s file%s" i ext (plural i) in
       let time = Int63.(time `Stop - !Quickjs.init_time) in
