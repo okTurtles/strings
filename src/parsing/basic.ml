@@ -67,6 +67,9 @@ let escapable_string_parser ~escape ~separator =
       let result = Buffer.contents buf in
       Buffer.clear buf;
       return result
+    | 'n', true ->
+      Buffer.add_char buf '\n';
+      loop false
     | c, true ->
       Buffer.add_char buf c;
       loop false

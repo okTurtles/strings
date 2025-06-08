@@ -37,7 +37,7 @@ value stub_init_contexts(value v_num_threads)
           JS_FreeRuntime(rt);
         } else {
           JS_FreeValue(ctx, ret_val);
-          contexts[i] = move(ctx);
+          contexts[i] = std::move(ctx);
         }
       }
     }
