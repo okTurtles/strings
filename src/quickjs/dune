@@ -55,8 +55,26 @@
 (rule
   (targets libomp.a)
   (action (bash "
-    cp /opt/homebrew/Cellar/libomp/20.1.6/lib/libomp.a . &> /dev/null \
-    || cp /usr/lib/libgomp.a libomp.a
+    OUT=\"libomp.a\"
+    PAWTHS=\"
+      /usr/local/Cellar/libomp/17.0.6/lib/libomp.a
+      /opt/homebrew/Cellar/libomp/20.1.6/lib/libomp.a
+      /usr/lib/x86_64-linux-gnu/libomp.a
+      /usr/lib/x86_64-linux-gnu/libgomp.a
+      /usr/lib/libgomp.a
+      /usr/lib/gcc/x86_64-linux-gnu/*/libgomp.a
+      /usr/lib/gcc/aarch64-redhat-linux/*/libgomp.a
+    \"
+    for p in $PAWTHS; do
+      for matched_path in $p; do
+        if [ -f \"$matched_path\" ]; then
+          cp \"$matched_path\" \"$OUT\"
+          exit 0
+        fi
+      done
+    done
+    echo \"Error: Could not find libomp.a or libgomp.a\" >&2
+    exit 1
   "))
   (mode standard)
 )

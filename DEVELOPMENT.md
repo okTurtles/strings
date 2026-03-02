@@ -68,3 +68,14 @@ docker run -it --rm \
   ## apt-get update && apt-get install musl
   ## /app/strings.linux frontend
 ```
+
+### Testing
+
+To run the automated tests and generate the translation files, first create the `strings/` directory at the project root, then run the tests. Ensure your opam environment is initialized:
+
+```sh
+eval $(opam env)
+mkdir -p strings && opam exec -- dune runtest tests/
+```
+
+This command builds the project, executes the test suite, and populates the `strings/` directory with `english.strings` (extracted from fixtures) and merged `french.strings`.
