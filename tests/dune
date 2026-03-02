@@ -37,18 +37,4 @@
       
       echo \"✅ French integration test passed\"
       rm -rf $TMP_DIR
-
-      # Help user populate root strings/ if it exists
-      # We use absolute paths to ensure we hit the real source directory
-      # even if sandboxed in _build/default/tests
-      # The dune-project is used as a landmark for the root
-      # Traverse up to find the root of the source tree
-      # In dune, we are at _build/default/tests
-      ROOT_SRC=\"$(cd ../../.. && pwd)\"
-      if [ -d \"$ROOT_SRC/strings\" ]; then
-        # Extraction generates 5 strings.
-        # We pre-populate 3 translations.
-        printf '\"Hello from HTML\" = \"Bonjour de HTML\";\n\"Hello from JS\" = \"Bonjour de JS\";\n\"Hello from Pug\" = \"Bonjour de Pug\";\n' > \"$ROOT_SRC/strings/french.strings\"
-        ./../src/cli/strings.exe \"$ROOT_SRC/tests/fixtures\" --output \"$ROOT_SRC/strings\"
-      fi
     ")))

@@ -71,11 +71,11 @@ docker run -it --rm \
 
 ### Testing
 
-To run the automated tests and generate the translation files, first create the `strings/` directory at the project root, then run the tests. Ensure your opam environment is initialized:
+To run the automated tests, ensure your opam environment is initialized:
 
 ```sh
 eval $(opam env)
-mkdir -p strings && opam exec -- dune runtest tests/
+dune runtest tests/
 ```
 
-This command builds the project, executes the test suite, and populates the `strings/` directory with `english.strings` (extracted from fixtures) and merged `french.strings`.
+This builds the project, runs the inline unit tests, and executes the integration test (which verifies extraction and translation preservation in an isolated temporary directory).

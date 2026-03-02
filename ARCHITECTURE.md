@@ -70,10 +70,10 @@ The main entry point of the application is **`src/cli/strings.ml`**. It handles 
 
 The project implements a multi-layered testing strategy:
 
-1. **Inline Tests**: Using `ppx_inline_test`, logic can be tested directly within the source files. This is primarily used for parser validation in `src/parsing/`.
-2. **Standard Test Suite**: Located in `tests/test_runner.ml`, this suite uses `ppx_expect` and `ppx_assert` to verify:
+1. **Inline Tests**: Using `ppx_inline_test` (e.g. `let%test_unit`) together with `ppx_assert` (e.g. `[%test_eq]`), logic can be tested directly within the source files. This is primarily used for parser validation in `src/parsing/`.
+2. **Standard Test Suite**: Located in `tests/test_runner.ml`, this suite runs the inline tests via `ppx_inline_test` and uses `ppx_assert` to verify:
    - JavaScript string extraction via `Flow_parser`.
-   - HTML and Pug extraction via `SZXX` and `Angstrom`.
+   - HTML extraction via `SZXX` and Pug extraction via `Angstrom`.
    - Apple-style `.strings` file parsing (via `Lwt_main.run` and `Lwt_io`).
 3. **Integration Testing**: The `tests/fixtures/` directory contains sample files of all supported types. The CLI can be run against these fixtures to verify end-to-end extraction and output generation (`.strings` and `.json` files).
 

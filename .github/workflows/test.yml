@@ -30,7 +30,7 @@ jobs:
 
       - name: Install QuickJS
         run: |
-          curl https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz > quickjs.tar.xz
+          curl -fsSL https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz -o quickjs.tar.xz
           tar xvf quickjs.tar.xz && rm quickjs.tar.xz
           mv quickjs-2021-03-27 quickjs
           cd quickjs && make
