@@ -24,3 +24,5 @@ src/sedlex
 src/collections
 
 tests/integration_test_run/
+.agents/
+ignored/
