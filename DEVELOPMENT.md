@@ -68,3 +68,14 @@ docker run -it --rm \
   ## apt-get update && apt-get install musl
   ## /app/strings.linux frontend
 ```
+
+### Testing
+
+To run the automated tests, ensure your opam environment is initialized:
+
+```sh
+eval $(opam env)
+dune runtest tests/
+```
+
+This builds the project, runs the inline unit tests, and executes the integration test (which verifies extraction and translation preservation in an isolated temporary directory).

@@ -1,0 +1,1 @@
+L('Hello from JS');

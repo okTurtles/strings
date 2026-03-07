@@ -1,0 +1,40 @@
+(library
+  (name parsing_tests)
+  (inline_tests)
+  (libraries parsing utils core lwt lwt.unix angstrom-lwt-unix)
+  (preprocess (pps ppx_jane ppx_inline_test))
+)
+
+(rule
+  (alias runtest)
+  (deps
+    ../src/cli/strings.exe
+    (source_tree fixtures))
+  (action
+    (bash "
+      TMP_DIR=\"integration_test_run\"
+      rm -rf $TMP_DIR
+      mkdir -p $TMP_DIR/strings
+      mkdir -p $TMP_DIR/.git
+      printf '\"Hello from HTML\" = \"Bonjour de HTML\";\n' > $TMP_DIR/strings/french.strings
+      cp -r fixtures $TMP_DIR/
+      cd $TMP_DIR
+      ../../src/cli/strings.exe fixtures --output strings &> /dev/null
+      cd ..
+      
+      if ! grep -q \"Bonjour de HTML\" $TMP_DIR/strings/french.strings; then
+        echo \"Error: French translation lost in .strings\"
+        exit 1
+      fi
+      if ! grep -q \"Bonjour de HTML\" $TMP_DIR/strings/french.json; then
+        echo \"Error: French translation lost in .json\"
+        exit 1
+      fi
+      if ! grep -q \"MISSING TRANSLATION - demo.pug\" $TMP_DIR/strings/french.strings; then
+        echo \"Error: Missing translation marker not found in .strings\"
+        exit 1
+      fi
+      
+      echo \"✅ French integration test passed\"
+      rm -rf $TMP_DIR
+    ")))

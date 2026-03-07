@@ -22,3 +22,7 @@ bad/
 src/flow_parser
 src/sedlex
 src/collections
+
+tests/integration_test_run/
+.agents/
+ignored/

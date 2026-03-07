@@ -1,0 +1,48 @@
+name: Tests
+
+on:
+  push:
+    branches: [ lwt, test-suite ]
+  pull_request:
+    branches: [ lwt ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.1.1
+          dune-cache: true
+          opam-repositories: |
+            default: https://github.com/ocaml/opam-repository.git
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y npm xz-utils libomp-dev llvm-dev
+          opam install . --deps-only --update-invariant
+          npm install --no-save typescript browserify pug-lexer pug-parser pug-walk
+
+      - name: Install QuickJS
+        run: |
+          curl -fsSL https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz -o quickjs.tar.xz
+          tar xvf quickjs.tar.xz && rm quickjs.tar.xz
+          mv quickjs-2021-03-27 quickjs
+          cd quickjs && make
+
+      - name: Install Flow
+        run: |
+          git clone --branch v0.183.1 --depth 1 https://github.com/facebook/flow.git flow
+          ln -s "$(pwd)/flow/src/parser" src/flow_parser
+          ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
+          ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
+
+      - name: Run tests
+        run: |
+          mkdir -p strings
+          opam exec -- dune runtest tests/
