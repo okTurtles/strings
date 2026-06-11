@@ -98,7 +98,7 @@ let collect_from_languages collector languages =
     languages
 
 let debug_template ~path languages template_script target =
-  let print_collector ~error_kind (Utils.Collector.{ strings; file_errors; _ } as collector) =
+  let print_collector ~error_kind (Utils.Collector.{ strings; file_errors; warnings; _ } as collector) =
     let* () =
       collect_from_possible_scripts collector template_script ~on_string:(Queue.enqueue strings)
     in
@@ -106,6 +106,10 @@ let debug_template ~path languages template_script target =
     let deduped = Queue.fold strings ~init:String.Set.empty ~f:Set.add in
     let* () = Lwt_io.printlf "Found %d strings:" (Set.length deduped) in
     Set.iter deduped ~f:(fun s -> bprintf buf !"%{Yojson.Basic}\n" (`String s));
+    if not (Queue.is_empty warnings)
+    then (
+      bprintf buf "\n⚠️ %s warnings in %s:\n" error_kind path;
+      Queue.iter warnings ~f:(bprintf buf "- %s\n") );
     if not (Queue.is_empty file_errors)
     then (
       bprintf buf "\n❌ %s errors in %s:\n" error_kind path;

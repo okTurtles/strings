@@ -63,6 +63,10 @@ let process_file traversal count filename ~f:get_collector =
       Utils.Collector.render_errors collector
       |> Option.value_map ~default:Lwt.return_unit ~f:Lwt_io.eprintl
     in
+    let* () =
+      Utils.Collector.render_warnings collector
+      |> Option.value_map ~default:Lwt.return_unit ~f:Lwt_io.eprintl
+    in
     Queue.iter collector.strings ~f:handler;
     Vue.collect_from_possible_scripts collector traversal.template_script ~on_string:handler )
 
