@@ -1,6 +1,6 @@
 # Agent Information - String Extractor
 
-This repository contains an OCaml-based internationalization (i18n) string extraction tool. It parses source files (JS, TS, Vue, Pug, HTML) and extracts strings for translation management.
+This repository contains an OCaml-based internationalization (i18n) string extraction tool. It parses source files (JS, TS, Vue, Pug, HTML, Astro) and extracts strings for translation management.
 
 ## Documentation
 
@@ -52,7 +52,7 @@ This runs both the inline unit tests (`tests/test_runner.ml`) and an integration
 - `--output DIR` / `-o`: change output directory (default `strings`).
 - `--ts`: treat scripts in HTML/Pug element attributes as TypeScript.
 - `--slow-pug` / `--sp`: use the official Pug parser via QuickJS instead of the fast native OCaml one.
-- `--debug-pug` / `--dp` and `--debug-html` / `--dh`: debug template parsing in `.vue` files (mutually exclusive).
+- `--debug-pug` / `--dp`, `--debug-html` / `--dh`, and `--debug-astro` / `--da`: debug template parsing (mutually exclusive). The first two target `.vue` files; `--debug-astro` targets `.astro` files.
 - There is **no** `--show-debugging` flag.
 
 ## Setup Gotchas (things that break builds)
@@ -72,11 +72,12 @@ This runs both the inline unit tests (`tests/test_runner.ml`) and an integration
    - JavaScript uses `Flow_parser` and a custom AST walker in `src/parsing/js_ast.ml`.
    - TypeScript uses the official TS parser running inside QuickJS (`src/quickjs/`).
 3. **Pug Parsing**: Has a "fast" OCaml implementation (`src/parsing/pug.ml`) and a "slow" official Pug implementation via QuickJS (enabled with `--slow-pug`).
+4. **Astro Parsing**: Native Angstrom scanner (`src/parsing/astro.ml`) segments `.astro` files into frontmatter, `<I18n>`/`<i18n>` blocks, `{...}` expressions, and `<script>` blocks. All Astro possible-scripts are parsed as **TypeScript regardless of `--ts`** (`process_file ~template_script:Vue.TS` in `src/cli/strings.ml`). A missing `is:raw` on an `<I18n>` whose text contains `{` produces a non-fatal warning.
 
 ### Extraction Pattern
 - Content is extracted into a `Utils.Collector.t` (`{ path; strings: string Queue.t; ... }`).
-- The collector tracks found strings, potential scripts (to be further parsed), and file errors. Use `Collector.blit_transfer` to merge collectors.
-- **Convention**: Strings found inside `L("...")` calls are treated as translations in JS/TS.
+- The collector tracks found strings, potential scripts (to be further parsed), file errors (fatal, `❌`), and warnings (non-fatal, `⚠️`). Use `Collector.blit_transfer` to merge collectors.
+- **Convention**: Strings found inside `L("...")` calls are treated as translations in JS/TS. In Vue/HTML/Pug templates and Astro files, text inside `i18n`/`I18n` elements is a translation key.
 
 ### Concurrency
 - Uses `Lwt` for cooperative concurrency.
@@ -90,10 +91,10 @@ This runs both the inline unit tests (`tests/test_runner.ml`) and an integration
 
 ## Testing Approach
 
-- **Inline Tests**: `ppx_inline_test` (`let%test_unit`) with `ppx_assert` (`[%test_eq:]`). Tests live in `tests/test_runner.ml` (a library with `(inline_tests)`); parsers in `src/parsing/` can also be tested inline.
+- **Inline Tests**: `ppx_inline_test` (`let%test_unit`) with `ppx_assert` (`[%test_eq:]`). Tests live in `tests/test_runner.ml` (a library with `(inline_tests)`); the `parsing` library also has `(inline_tests)` enabled (e.g. the tests at the bottom of `src/parsing/astro.ml`).
 - **Lwt in tests**: Wrap async test bodies in `Lwt_main.run`. For testing `Strings.parse` without the filesystem, build an in-memory channel: `Lwt_io.of_bytes ~mode:Lwt_io.input (Lwt_bytes.of_string content)`.
-- **Synchronous parsers**: `Js.extract_to_collector` and the HTML/Pug parsers work on raw strings synchronously — no Lwt needed in those tests.
-- **Integration Tests**: `tests/dune` contains a bash-based `runtest` rule using fixtures in `tests/fixtures/` (demo.html, demo.js, demo.pug, demo.vue). The CI workflow (`.github/workflows/test.yml`) requires `mkdir -p strings` before `dune runtest tests/`.
+- **Synchronous parsers**: `Js.extract_to_collector` and the HTML/Pug/Astro parsers work on raw strings synchronously — no Lwt needed in those tests.
+- **Integration Tests**: `tests/dune` contains a bash-based `runtest` rule using fixtures in `tests/fixtures/` (demo.html, demo.js, demo.pug, demo.vue, demo.astro). The CI workflow (`.github/workflows/test.yml`) requires `mkdir -p strings` before `dune runtest tests/`.
 
 ## Troubleshooting
 

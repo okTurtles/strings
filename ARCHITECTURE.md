@@ -21,6 +21,7 @@ The main entry point of the application is **`src/cli/strings.ml`**. It handles 
 │   │   ├── js.ml       # JavaScript string extraction entry point
 │   │   ├── pug.ml      # Native Pug template parsing
 │   │   ├── html.ml     # HTML template parsing
+│   │   ├── astro.ml    # Native Astro file scanning (frontmatter, I18n, expressions)
 │   │   ├── strings.ml  # .strings file parsing logic
 │   │   └── ...         # Other specialized parsers (vue blocks, styles)
 │   ├── quickjs/        # Interface to QuickJS for JS/TS/Pug parsing
@@ -50,13 +51,15 @@ The main entry point of the application is **`src/cli/strings.ml`**. It handles 
 - **`Parsing.Js.extract_to_collector`**: Entry point for scanning JavaScript source code.
 - **`Parsing.Js_ast.extract`**: A comprehensive walker for the Flow AST that identifies and extracts strings from `L("...")` calls.
 - **`Parsing.Pug.collect`**: Traverses the native Pug AST to extract strings.
+- **`Parsing.Astro.parser` / `Parsing.Astro.collect`**: Native Angstrom scanner for `.astro` files. Segments a file into frontmatter, `<script>` blocks, `{...}` expressions (brace matching respects strings, template literals, and comments), and `<I18n>`/`<i18n>` blocks. `collect` enqueues I18n slot text into `strings`, all code segments into `possible_scripts` (always parsed as TypeScript), and emits a non-fatal warning when I18n text contains `{placeholders}` without the `is:raw` directive. `parser` takes `unit` because it uses an internal shared buffer — create a fresh parser per file.
 - **`Parsing.Strings.parse`**: Parses existing `.strings` files into a lookup table. Takes a `Lwt_io.input_channel` and returns a `string Core.String.Table.t Lwt.t`.
 
 ### `src/quickjs/`
 - **`Quickjs.extract_to_collector`**: Offloads extraction to QuickJS for TypeScript and advanced Pug templates.
 
 ### `src/utils/`
-- **`Utils.Collector.create`**: Initializes a new string collection state for a specific file. (type `t = { path: string; strings: string Queue.t; ... }`)
+- **`Utils.Collector.create`**: Initializes a new string collection state for a specific file. (type `t = { path: string; strings: string Queue.t; possible_scripts: string Queue.t; file_errors: string Queue.t; warnings: string Queue.t }`)
+- **`Utils.Collector.render_errors` / `Utils.Collector.render_warnings`**: Render collected errors (`❌`, fatal) and warnings (`⚠️`, non-fatal) for terminal output.
 - **`Utils.Collector.blit_transfer`**: Merges results from one collector into another.
 
 ## Control Flow
@@ -75,6 +78,6 @@ The project implements a multi-layered testing strategy:
    - JavaScript string extraction via `Flow_parser`.
    - HTML extraction via `SZXX` and Pug extraction via `Angstrom`.
    - Apple-style `.strings` file parsing (via `Lwt_main.run` and `Lwt_io`).
-3. **Integration Testing**: The `tests/fixtures/` directory contains sample files of all supported types. The CLI can be run against these fixtures to verify end-to-end extraction and output generation (`.strings` and `.json` files).
+3. **Integration Testing**: The `tests/fixtures/` directory contains sample files of all supported types (including `demo.astro`). The CLI can be run against these fixtures to verify end-to-end extraction and output generation (`.strings` and `.json` files).
 
 The `tests/dune` file configures the test library and enables inline tests for the module.

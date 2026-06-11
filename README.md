@@ -39,6 +39,43 @@ Notes:
 1. Make a copy of `english.strings` and rename it to e.g. `french.strings`
 2. Start translating `french.strings`!
 
+## Astro
+
+The extractor also scans `.astro` files ([Astro framework](https://astro.build)). It extracts:
+
+- The text inside `<I18n>...</I18n>` (or `<i18n>...</i18n>`) components, used as the translation key.
+- `L('...')` calls found in the frontmatter (`--- ... ---`), in `{...}` expressions, in `args={...}`, and in `<script>` blocks. Astro code is always treated as TypeScript.
+
+Because Astro compiles `{...}` in element children as JavaScript expressions, add the [`is:raw`](https://docs.astro.build/en/reference/directives-reference/#israw) directive whenever the text contains `{placeholder}` syntax. With `is:raw`, the component receives the literal text — the same string as in `.vue` files, so the app and the website share one set of translations:
+
+```astro
+---
+import I18n from '../components/I18n.astro'
+const title = L('Create a group')
+---
+
+<h1>{L('Welcome to Group Income')}</h1>
+
+<I18n is:raw>Logout</I18n>
+
+<I18n is:raw args={{ name: groupName, ...LTags("strong") }}>
+  Yes, I want to {strong_}delete {name} permanently{_strong}.
+</I18n>
+```
+
+If an `<I18n>` element contains `{placeholders}` but is missing `is:raw`, the extractor prints a warning (the string is still extracted), because Astro would otherwise evaluate the placeholders as expressions.
+
+A minimal `I18n.astro` component looks like this:
+
+```astro
+---
+const { args } = Astro.props
+const text = await Astro.slots.render('default')
+---
+
+<Fragment set:html={L(text.trim(), args)} />
+```
+
 ## Developers
 
 Download the latest version of the String Extractor [here](https://github.com/okTurtles/strings/releases).
