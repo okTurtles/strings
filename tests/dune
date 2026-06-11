@@ -34,6 +34,22 @@
         echo \"Error: Missing translation marker not found in .strings\"
         exit 1
       fi
+      if ! grep -q 'Hello from Astro' $TMP_DIR/strings/english.strings; then
+        echo \"Error: Astro I18n string not found in english.strings\"
+        exit 1
+      fi
+      if ! grep -q 'Hello from Astro Frontmatter' $TMP_DIR/strings/english.strings; then
+        echo \"Error: Astro frontmatter string not found in english.strings\"
+        exit 1
+      fi
+      if ! grep -q 'Hello {strong_}from{_strong} Astro Args' $TMP_DIR/strings/english.strings; then
+        echo \"Error: Astro placeholder string not found in english.strings\"
+        exit 1
+      fi
+      if ! grep -q \"MISSING TRANSLATION - demo.astro\" $TMP_DIR/strings/french.strings; then
+        echo \"Error: Missing translation marker for demo.astro not found in .strings\"
+        exit 1
+      fi
       
       echo \"✅ French integration test passed\"
       rm -rf $TMP_DIR
