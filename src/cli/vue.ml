@@ -26,6 +26,10 @@ module Language = struct
         collector: Utils.Collector.t;
         length: int;
       }
+    | Astro of {
+        parsed: Astro.t;
+        length: int option;
+      }
     | Css of int
     | Failed of string
 
@@ -61,6 +65,7 @@ module Debug = struct
   type t =
     | Pug
     | Html
+    | Astro
 end
 
 let collect_from_possible_scripts Utils.Collector.{ possible_scripts; _ } template_script ~on_string =
@@ -86,6 +91,9 @@ let collect_from_languages collector languages =
         Lwt.return_unit
       | Pug { collector = src; length = _ } ->
         Utils.Collector.blit_transfer ~src ~dst:collector;
+        Lwt.return_unit
+      | Astro { parsed; length = _ } ->
+        Astro.collect collector parsed;
         Lwt.return_unit
       | Js source ->
         Js.extract_to_collector collector source;
@@ -133,11 +141,18 @@ let debug_template ~path languages template_script target =
         let* () = collect_from_languages collector [ lang ] in
         print_collector ~error_kind:"Pug" collector
       | Pug { collector; length = _ }, Pug -> print_collector ~error_kind:"Pug" collector
-      | Html { length = Some len; _ }, Pug -> Lwt_io.printlf "<HTML code - %d bytes>" len
-      | Html { length = None; _ }, Pug -> Lwt_io.printl "<HTML code>"
-      | Pug_native { length = Some len; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" len
-      | Pug_native { length = None; _ }, Html -> Lwt_io.printl "<Pug code>"
-      | Pug { length; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" length
+      | (Astro { parsed; length = _ } as lang), Astro ->
+        let* () = Lwt_io.printlf !"%{sexp#hum: Astro.t}" parsed in
+        let collector = Utils.Collector.create ~path in
+        let* () = collect_from_languages collector [ lang ] in
+        print_collector ~error_kind:"Astro" collector
+      | Astro { length = Some len; _ }, (Pug | Html) -> Lwt_io.printlf "<Astro code - %d bytes>" len
+      | Astro { length = None; _ }, (Pug | Html) -> Lwt_io.printl "<Astro code>"
+      | Html { length = Some len; _ }, (Pug | Astro) -> Lwt_io.printlf "<HTML code - %d bytes>" len
+      | Html { length = None; _ }, (Pug | Astro) -> Lwt_io.printl "<HTML code>"
+      | Pug_native { length = Some len; _ }, (Html | Astro) -> Lwt_io.printlf "<Pug code - %d bytes>" len
+      | Pug_native { length = None; _ }, (Html | Astro) -> Lwt_io.printl "<Pug code>"
+      | Pug { length; _ }, (Html | Astro) -> Lwt_io.printlf "<Pug code - %d bytes>" length
       | Failed msg, _ -> Lwt_io.printlf "❌ Parsing error in path: %s" msg)
     languages
 

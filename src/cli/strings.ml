@@ -273,6 +273,13 @@ let main options = function
             Vue.debug_template ~path [ Html { parsed; length = None } ] template_script lang
           in
           Parsing.Basic.exec_parser_lwt ~on_ok Parsing.Html.parser ~path ~language_name:"Pug" ic
+        | Astro, _ when String.is_suffix path ~suffix:".astro" ->
+          let* source = Lwt_io.read ic in
+          let on_ok parsed =
+            (* Astro scripts are always TypeScript *)
+            Vue.debug_template ~path [ Astro { parsed; length = None } ] Vue.TS lang
+          in
+          Parsing.(Basic.exec_parser ~on_ok (Astro.parser ())) ~path ~language_name:"Astro" source
         | _ -> Lwt_io.printlf "Nothing to do for file [%s]" path ))
     options.targets
 | Run ->
@@ -377,7 +384,12 @@ let () =
         ~doc:"Debug html templates in .vue files"
       >>| Fn.flip Option.some_if (Debug Html)
     in
-    choose_one [ debug_pug; debug_html ] ~if_nothing_chosen:(Default_to Run)
+    let debug_astro =
+      flag "--debug-astro" ~aliases:[ "--da" ] ~full_flag_required:() no_arg
+        ~doc:"Debug .astro file parsing"
+      >>| Fn.flip Option.some_if (Debug Astro)
+    in
+    choose_one [ debug_pug; debug_html; debug_astro ] ~if_nothing_chosen:(Default_to Run)
   in
 
   let handle_system_failure = function
