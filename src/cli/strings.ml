@@ -115,8 +115,9 @@ let rec process_dir traversal ~path = function
       in
       collector )
   | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".astro" ->
-    (* Astro frontmatter and expressions are TypeScript by definition *)
-    process_file ~template_script:Vue.TS traversal traversal.counts.astro path ~f:(fun ic ->
+    (* Astro frontmatter and expressions are TypeScript by definition; expressions may
+       contain JSX, so they are parsed as TSX *)
+    process_file ~template_script:Vue.TSX traversal traversal.counts.astro path ~f:(fun ic ->
       let collector = Utils.Collector.create ~path in
       let+ source = Lwt_io.read ic in
       let on_ok parsed = Parsing.Astro.collect collector parsed in
@@ -276,8 +277,8 @@ let main options = function
         | Astro, _ when String.is_suffix path ~suffix:".astro" ->
           let* source = Lwt_io.read ic in
           let on_ok parsed =
-            (* Astro scripts are always TypeScript *)
-            Vue.debug_template ~path [ Astro { parsed; length = None } ] Vue.TS lang
+            (* Astro scripts are always TypeScript, parsed as TSX *)
+            Vue.debug_template ~path [ Astro { parsed; length = None } ] Vue.TSX lang
           in
           Parsing.(Basic.exec_parser ~on_ok (Astro.parser ())) ~path ~language_name:"Astro" source
         | _ -> Lwt_io.printlf "Nothing to do for file [%s]" path ))

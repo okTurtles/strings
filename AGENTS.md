@@ -72,7 +72,7 @@ This runs both the inline unit tests (`tests/test_runner.ml`) and an integration
    - JavaScript uses `Flow_parser` and a custom AST walker in `src/parsing/js_ast.ml`.
    - TypeScript uses the official TS parser running inside QuickJS (`src/quickjs/`).
 3. **Pug Parsing**: Has a "fast" OCaml implementation (`src/parsing/pug.ml`) and a "slow" official Pug implementation via QuickJS (enabled with `--slow-pug`).
-4. **Astro Parsing**: Native Angstrom scanner (`src/parsing/astro.ml`) segments `.astro` files into frontmatter, `<I18n>`/`<i18n>` blocks, `{...}` expressions, and `<script>` blocks. All Astro possible-scripts are parsed as **TypeScript regardless of `--ts`** (`process_file ~template_script:Vue.TS` in `src/cli/strings.ml`). A missing `is:raw` on an `<I18n>` whose text contains `{` produces a non-fatal warning.
+4. **Astro Parsing**: Native Angstrom scanner (`src/parsing/astro.ml`) segments `.astro` files into frontmatter, `<I18n>`/`<i18n>` blocks, `{...}` expressions, and `<script>` blocks. All Astro possible-scripts are parsed as **TSX regardless of `--ts`** (`process_file ~template_script:Vue.TSX` in `src/cli/strings.ml`; `Quickjs.Typescript_tsx` → `extractFromTSX` in `src/quickjs/parsers.js`), so JSX inside expressions parses. `Astro.collect` also re-scans expression segments containing `<I18n`/`<i18n` for nested I18n blocks (conditional/mapped JSX rendering). A missing `is:raw` on an `<I18n>` whose text contains `{` produces a non-fatal warning.
 
 ### Extraction Pattern
 - Content is extracted into a `Utils.Collector.t` (`{ path; strings: string Queue.t; ... }`).

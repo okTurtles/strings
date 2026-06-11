@@ -22,34 +22,7 @@ type t = segment list [@@deriving sexp_of]
    instead of block statements *)
 let wrap_expression s = sprintf "(%s)" s
 
-let collect Utils.Collector.{ strings; possible_scripts; warnings; _ } (segments : t) =
-  let enqueue_expression source =
-    if not (String.is_empty (String.strip source))
-    then Queue.enqueue possible_scripts (wrap_expression source)
-  in
-  List.iter segments ~f:(function
-    | Frontmatter source
-     |Script source ->
-      Queue.enqueue possible_scripts source
-    | Expression source -> enqueue_expression source
-    | I18n { tag; is_raw; args; text } ->
-      Option.iter args ~f:enqueue_expression;
-      Option.iter text ~f:(fun text ->
-        let key = String.strip text in
-        if not (String.is_empty key)
-        then (
-          Queue.enqueue strings key;
-          if (not is_raw) && String.contains key '{'
-          then
-            Queue.enqueue warnings
-              (sprintf
-                 "<%s> contains placeholders but is missing the is:raw directive: %s. Add it like this: \
-                  <%s is:raw ...> (otherwise Astro evaluates the placeholders as expressions)"
-                 tag
-                 (Yojson.Basic.to_string (`String key))
-                 tag ) ) ) )
-
-let parser () =
+let parsers () =
   let open Angstrom in
   let open Basic in
   let buf = Buffer.create 256 in
@@ -262,14 +235,69 @@ let parser () =
     fence *> ws *> end_of_line *> go []
   in
 
-  lift2
-    (fun fm body ->
-      match fm with
-      | None -> body
-      | Some s -> Frontmatter s :: body)
-    (mlws *> maybe frontmatter)
-    (many element_chunk >>| List.concat)
-  <* end_of_input
+  let body = many element_chunk >>| List.concat in
+  let full =
+    lift2
+      (fun fm body ->
+        match fm with
+        | None -> body
+        | Some s -> Frontmatter s :: body)
+      (mlws *> maybe frontmatter)
+      body
+    <* end_of_input
+  in
+  body, full
+
+let parser () = snd (parsers ())
+
+let body_parser () = fst (parsers ())
+
+let collect Utils.Collector.{ strings; possible_scripts; warnings; _ } (segments : t) =
+  let enqueue_expression source =
+    if not (String.is_empty (String.strip source))
+    then Queue.enqueue possible_scripts (wrap_expression source)
+  in
+  (* Astro expressions may contain JSX (conditional/mapped rendering). The TSX pass over
+     the expression finds L() calls, but <I18n> blocks nested in JSX would be lost, so
+     expressions are re-scanned with the lenient body parser for nested I18n segments. *)
+  let rec scan_expression_for_i18n source =
+    if String.is_substring source ~substring:"<I18n" || String.is_substring source ~substring:"<i18n"
+    then
+      Angstrom.parse_string ~consume:All (body_parser ()) source
+      |> Result.iter ~f:(fun nested ->
+           List.iter nested ~f:(function
+             | I18n block -> handle_i18n block
+             | Expression nested_source -> scan_expression_for_i18n nested_source
+             | Frontmatter _
+              |Script _ ->
+               () ) )
+  and handle_i18n { tag; is_raw; args; text } =
+    Option.iter args ~f:(fun args ->
+      enqueue_expression args;
+      scan_expression_for_i18n args );
+    Option.iter text ~f:(fun text ->
+      let key = String.strip text in
+      if not (String.is_empty key)
+      then (
+        Queue.enqueue strings key;
+        if (not is_raw) && String.contains key '{'
+        then
+          Queue.enqueue warnings
+            (sprintf
+               "<%s> contains placeholders but is missing the is:raw directive: %s. Add it like this: \
+                <%s is:raw ...> (otherwise Astro evaluates the placeholders as expressions)"
+               tag
+               (Yojson.Basic.to_string (`String key))
+               tag ) ) )
+  in
+  List.iter segments ~f:(function
+    | Frontmatter source
+     |Script source ->
+      Queue.enqueue possible_scripts source
+    | Expression source ->
+      enqueue_expression source;
+      scan_expression_for_i18n source
+    | I18n block -> handle_i18n block )
 
 (* Tests *)
 
@@ -375,3 +403,34 @@ const title = L('Create a group')
     (List.exists (Queue.to_list collector.possible_scripts) ~f:(fun s ->
        String.is_substring s ~substring:"L('Create a group')" ) )
     true
+
+let%test_unit "astro: I18n nested in a mapped JSX expression" =
+  let collector = test_collect "{items.map(item => <I18n is:raw>Mapped string</I18n>)}" in
+  [%test_eq: string list] (Queue.to_list collector.strings) [ "Mapped string" ];
+  [%test_eq: int] (Queue.length collector.warnings) 0
+
+let%test_unit "astro: I18n nested in a conditional JSX expression" =
+  let collector = test_collect "{cond && <p><I18n>Hello {name}!</I18n></p>}" in
+  [%test_eq: string list] (Queue.to_list collector.strings) [ "Hello {name}!" ];
+  [%test_eq: int] (Queue.length collector.warnings) 1
+
+let%test_unit "astro: I18n nested two expression levels deep" =
+  let collector = test_collect "{cond && <div>{items.map(() => <i18n>Deep</i18n>)}</div>}" in
+  [%test_eq: string list] (Queue.to_list collector.strings) [ "Deep" ]
+
+let%test_unit "astro: nested I18n args expression is captured" =
+  let collector =
+    test_collect "{cond && <I18n is:raw args={{ ...LTags(\"b\") }}>Nested {b_}x{_b}</I18n>}"
+  in
+  [%test_eq: string list] (Queue.to_list collector.strings) [ "Nested {b_}x{_b}" ];
+  [%test_eq: bool]
+    (List.exists (Queue.to_list collector.possible_scripts) ~f:(fun s ->
+       String.is_substring s ~substring:"LTags(\"b\")" ) )
+    true
+
+let%test_unit "astro: expression without I18n is not rescanned into strings" =
+  let collector = test_collect "{cond && <p>{L('Inner JSX string')}</p>}" in
+  [%test_eq: string list] (Queue.to_list collector.strings) [];
+  [%test_eq: string list]
+    (Queue.to_list collector.possible_scripts)
+    [ "(cond && <p>{L('Inner JSX string')}</p>)" ]

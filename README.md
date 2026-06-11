@@ -43,8 +43,8 @@ Notes:
 
 The extractor also scans `.astro` files ([Astro framework](https://astro.build)). It extracts:
 
-- The text inside `<I18n>...</I18n>` (or `<i18n>...</i18n>`) components, used as the translation key.
-- `L('...')` calls found in the frontmatter (`--- ... ---`), in `{...}` expressions, in `args={...}`, and in `<script>` blocks. Astro code is always treated as TypeScript.
+- The text inside `<I18n>...</I18n>` (or `<i18n>...</i18n>`) components, used as the translation key — including components nested inside JSX expressions such as `{cond && <I18n is:raw>...</I18n>}` or `{items.map(() => <I18n is:raw>...</I18n>)}`.
+- `L('...')` calls found in the frontmatter (`--- ... ---`), in `{...}` expressions (including JSX), in `args={...}`, and in `<script>` blocks. Astro code is always treated as TypeScript (TSX).
 
 Because Astro compiles `{...}` in element children as JavaScript expressions, add the [`is:raw`](https://docs.astro.build/en/reference/directives-reference/#israw) directive whenever the text contains `{placeholder}` syntax. With `is:raw`, the component receives the literal text — the same string as in `.vue` files, so the app and the website share one set of translations:
 

@@ -60,6 +60,7 @@ end
 type template_script =
   | JS
   | TS
+  | TSX
 
 module Debug = struct
   type t =
@@ -75,8 +76,14 @@ let collect_from_possible_scripts Utils.Collector.{ possible_scripts; _ } templa
     | JS ->
       Js.extract raw ~on_string;
       Lwt.return_unit
-    | TS -> (
-      Quickjs.extract Typescript raw >|= function
+    | TS
+     |TSX -> (
+      let kind : Quickjs.kind =
+        match template_script with
+        | TSX -> Typescript_tsx
+        | _ -> Typescript
+      in
+      Quickjs.extract kind raw >|= function
       | Error _ -> ()
       | Ok (strings, _) -> Array.iter strings ~f:on_string ) )
 

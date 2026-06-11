@@ -4,6 +4,10 @@ const title = L('Hello from Astro Frontmatter')
 
 <h1>{L('Hello from Astro Expression')}</h1>
 
+{cond && <p>{L('Hello from Astro JSX')}</p>}
+
+{items.map(item => <I18n is:raw>Hello from Astro Mapped</I18n>)}
+
 <I18n is:raw>Hello from Astro</I18n>
 
 <I18n is:raw args={{ ...LTags("strong") }}>

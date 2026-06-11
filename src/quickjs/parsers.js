@@ -1,8 +1,8 @@
 'use strict'
 
-const { createSourceFile, ScriptTarget, SyntaxKind, forEachChild } = require('typescript')
+const { createSourceFile, ScriptTarget, ScriptKind, SyntaxKind, forEachChild } = require('typescript')
 
-globalThis.extractFromTypeScript = function (code) {
+const extractLCalls = function (sourceFile) {
   const acc = []
   function traverse (node) {
     if (node.kind === SyntaxKind.CallExpression &&
@@ -14,11 +14,22 @@ globalThis.extractFromTypeScript = function (code) {
     }
     forEachChild(node, traverse)
   }
-  traverse(createSourceFile('<source>', code, ScriptTarget.ES2015, false))
+  traverse(sourceFile)
   return {
     strings: acc,
     possibleScripts: []
   }
+}
+
+globalThis.extractFromTypeScript = function (code) {
+  return extractLCalls(createSourceFile('<source>', code, ScriptTarget.ES2015, false))
+}
+
+// TSX flavor for Astro: expressions may contain JSX (conditional/mapped rendering).
+// Kept separate from extractFromTypeScript because in plain TS files `<T>expr` casts
+// must keep parsing as casts, not JSX.
+globalThis.extractFromTSX = function (code) {
+  return extractLCalls(createSourceFile('<source>', code, ScriptTarget.ES2015, false, ScriptKind.TSX))
 }
 
 const extractFromAttr = function (code) {

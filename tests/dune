@@ -46,6 +46,14 @@
         echo \"Error: Astro placeholder string not found in english.strings\"
         exit 1
       fi
+      if ! grep -q 'Hello from Astro JSX' $TMP_DIR/strings/english.strings; then
+        echo \"Error: Astro JSX expression string not found in english.strings\"
+        exit 1
+      fi
+      if ! grep -q 'Hello from Astro Mapped' $TMP_DIR/strings/english.strings; then
+        echo \"Error: Astro nested I18n string not found in english.strings\"
+        exit 1
+      fi
       if ! grep -q \"MISSING TRANSLATION - demo.astro\" $TMP_DIR/strings/french.strings; then
         echo \"Error: Missing translation marker for demo.astro not found in .strings\"
         exit 1
