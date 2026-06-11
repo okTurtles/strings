@@ -26,6 +26,7 @@ type counts = {
   html: int ref;
   js: int ref;
   ts: int ref;
+  astro: int ref;
 }
 
 type common_options = {
@@ -47,7 +48,7 @@ type traversal = {
   counts: counts;
 }
 
-let process_file traversal count filename ~f:get_collector =
+let process_file ?template_script traversal count filename ~f:get_collector =
   Lwt_pool.use pool (fun () ->
     incr count;
     let* (collector : Utils.Collector.t) =
@@ -68,7 +69,8 @@ let process_file traversal count filename ~f:get_collector =
       |> Option.value_map ~default:Lwt.return_unit ~f:Lwt_io.eprintl
     in
     Queue.iter collector.strings ~f:handler;
-    Vue.collect_from_possible_scripts collector traversal.template_script ~on_string:handler )
+    let template_script = Option.value template_script ~default:traversal.template_script in
+    Vue.collect_from_possible_scripts collector template_script ~on_string:handler )
 
 let rec process_dir traversal ~path = function
 | "node_modules" -> Lwt.return_unit
@@ -111,6 +113,15 @@ let rec process_dir traversal ~path = function
           Parsing.(Basic.exec_parser ~on_ok ~on_error (Pug.parser (Basic.make_string_parsers ())))
             ~path ~language_name:"Pug" source
       in
+      collector )
+  | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".astro" ->
+    (* Astro frontmatter and expressions are TypeScript by definition *)
+    process_file ~template_script:Vue.TS traversal traversal.counts.astro path ~f:(fun ic ->
+      let collector = Utils.Collector.create ~path in
+      let+ source = Lwt_io.read ic in
+      let on_ok parsed = Parsing.Astro.collect collector parsed in
+      let on_error ~msg = Queue.enqueue collector.file_errors msg in
+      Parsing.(Basic.exec_parser ~on_ok ~on_error (Astro.parser ())) ~path ~language_name:"Astro" source;
       collector )
   | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".html" ->
     process_file traversal traversal.counts.html path ~f:(fun ic ->
@@ -283,7 +294,7 @@ let main options = function
   (* English *)
   let* english =
     let table = String.Table.create () in
-    let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0 } in
+    let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0; astro = ref 0 } in
     let time = Utils.Timing.start () in
     let* () =
       Lwt_list.iter_p
@@ -306,9 +317,9 @@ let main options = function
       let f ext i = sprintf "%d %s file%s" i ext (plural i) in
       let time = Int63.(time `Stop - !Quickjs.init_time) in
       Lwt_io.printlf
-        !"✅ [%{Int63}ms] Processed %s, %s, %s, %s, and %s"
+        !"✅ [%{Int63}ms] Processed %s, %s, %s, %s, %s, and %s"
         time (f ".js" !(counts.js)) (f ".ts" !(counts.ts)) (f ".html" !(counts.html))
-        (f ".vue" !(counts.vue)) (f ".pug" !(counts.pug))
+        (f ".vue" !(counts.vue)) (f ".pug" !(counts.pug)) (f ".astro" !(counts.astro))
     in
     let+ () = write_english ~outdir english in
     english
