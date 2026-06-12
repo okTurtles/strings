@@ -2,19 +2,22 @@ name: Tests
 
 on:
   push:
-    branches: [ lwt, test-suite ]
+    branches: [ master ]
   pull_request:
-    branches: [ lwt ]
+    branches: [ master ]
+
+permissions:
+  contents: read
 
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - name: Set up OCaml
-        uses: ocaml/setup-ocaml@v3
+        uses: ocaml/setup-ocaml@e32b06a3e831ff2fbc6f08cf35be2085e3918014 # v3.6.1
         with:
           ocaml-compiler: 5.1.1
           dune-cache: true
