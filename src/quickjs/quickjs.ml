@@ -4,10 +4,12 @@ open Lwt.Syntax
 
 type kind =
   | Typescript
+  | Typescript_tsx
   | Pug
 
 let fn_name_of_kind = function
 | Typescript -> "extractFromTypeScript"
+| Typescript_tsx -> "extractFromTSX"
 | Pug -> "extractFromPug"
 
 external stub_init_contexts : int -> (unit, string) Result.t = "stub_init_contexts"
@@ -71,7 +73,9 @@ let extract kind code =
   let* () = force init_contexts in
   let code =
     match kind with
-    | Typescript -> code
+    | Typescript
+     |Typescript_tsx ->
+      code
     | Pug -> clean_pug code
   in
   let fn_name = fn_name_of_kind kind in

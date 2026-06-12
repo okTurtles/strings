@@ -26,6 +26,7 @@ type counts = {
   html: int ref;
   js: int ref;
   ts: int ref;
+  astro: int ref;
 }
 
 type common_options = {
@@ -47,7 +48,7 @@ type traversal = {
   counts: counts;
 }
 
-let process_file traversal count filename ~f:get_collector =
+let process_file ?template_script traversal count filename ~f:get_collector =
   Lwt_pool.use pool (fun () ->
     incr count;
     let* (collector : Utils.Collector.t) =
@@ -63,8 +64,13 @@ let process_file traversal count filename ~f:get_collector =
       Utils.Collector.render_errors collector
       |> Option.value_map ~default:Lwt.return_unit ~f:Lwt_io.eprintl
     in
+    let* () =
+      Utils.Collector.render_warnings collector
+      |> Option.value_map ~default:Lwt.return_unit ~f:Lwt_io.eprintl
+    in
     Queue.iter collector.strings ~f:handler;
-    Vue.collect_from_possible_scripts collector traversal.template_script ~on_string:handler )
+    let template_script = Option.value template_script ~default:traversal.template_script in
+    Vue.collect_from_possible_scripts collector template_script ~on_string:handler )
 
 let rec process_dir traversal ~path = function
 | "node_modules" -> Lwt.return_unit
@@ -107,6 +113,16 @@ let rec process_dir traversal ~path = function
           Parsing.(Basic.exec_parser ~on_ok ~on_error (Pug.parser (Basic.make_string_parsers ())))
             ~path ~language_name:"Pug" source
       in
+      collector )
+  | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".astro" ->
+    (* Astro frontmatter and expressions are TypeScript by definition; expressions may
+       contain JSX, so they are parsed as TSX *)
+    process_file ~template_script:Vue.TSX traversal traversal.counts.astro path ~f:(fun ic ->
+      let collector = Utils.Collector.create ~path in
+      let+ source = Lwt_io.read ic in
+      let on_ok parsed = Parsing.Astro.collect collector parsed in
+      let on_error ~msg = Queue.enqueue collector.file_errors msg in
+      Parsing.(Basic.exec_parser ~on_ok ~on_error (Astro.parser ())) ~path ~language_name:"Astro" source;
       collector )
   | { st_kind = S_REG; _ }, _, _ when String.is_suffix filename ~suffix:".html" ->
     process_file traversal traversal.counts.html path ~f:(fun ic ->
@@ -258,6 +274,13 @@ let main options = function
             Vue.debug_template ~path [ Html { parsed; length = None } ] template_script lang
           in
           Parsing.Basic.exec_parser_lwt ~on_ok Parsing.Html.parser ~path ~language_name:"Pug" ic
+        | Astro, _ when String.is_suffix path ~suffix:".astro" ->
+          let* source = Lwt_io.read ic in
+          let on_ok parsed =
+            (* Astro scripts are always TypeScript, parsed as TSX *)
+            Vue.debug_template ~path [ Astro { parsed; length = None } ] Vue.TSX lang
+          in
+          Parsing.(Basic.exec_parser ~on_ok (Astro.parser ())) ~path ~language_name:"Astro" source
         | _ -> Lwt_io.printlf "Nothing to do for file [%s]" path ))
     options.targets
 | Run ->
@@ -279,7 +302,7 @@ let main options = function
   (* English *)
   let* english =
     let table = String.Table.create () in
-    let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0 } in
+    let counts = { vue = ref 0; pug = ref 0; html = ref 0; js = ref 0; ts = ref 0; astro = ref 0 } in
     let time = Utils.Timing.start () in
     let* () =
       Lwt_list.iter_p
@@ -302,9 +325,9 @@ let main options = function
       let f ext i = sprintf "%d %s file%s" i ext (plural i) in
       let time = Int63.(time `Stop - !Quickjs.init_time) in
       Lwt_io.printlf
-        !"✅ [%{Int63}ms] Processed %s, %s, %s, %s, and %s"
+        !"✅ [%{Int63}ms] Processed %s, %s, %s, %s, %s, and %s"
         time (f ".js" !(counts.js)) (f ".ts" !(counts.ts)) (f ".html" !(counts.html))
-        (f ".vue" !(counts.vue)) (f ".pug" !(counts.pug))
+        (f ".vue" !(counts.vue)) (f ".pug" !(counts.pug)) (f ".astro" !(counts.astro))
     in
     let+ () = write_english ~outdir english in
     english
@@ -362,7 +385,12 @@ let () =
         ~doc:"Debug html templates in .vue files"
       >>| Fn.flip Option.some_if (Debug Html)
     in
-    choose_one [ debug_pug; debug_html ] ~if_nothing_chosen:(Default_to Run)
+    let debug_astro =
+      flag "--debug-astro" ~aliases:[ "--da" ] ~full_flag_required:() no_arg
+        ~doc:"Debug .astro file parsing"
+      >>| Fn.flip Option.some_if (Debug Astro)
+    in
+    choose_one [ debug_pug; debug_html; debug_astro ] ~if_nothing_chosen:(Default_to Run)
   in
 
   let handle_system_failure = function

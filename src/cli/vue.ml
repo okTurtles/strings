@@ -26,6 +26,10 @@ module Language = struct
         collector: Utils.Collector.t;
         length: int;
       }
+    | Astro of {
+        parsed: Astro.t;
+        length: int option;
+      }
     | Css of int
     | Failed of string
 
@@ -56,11 +60,13 @@ end
 type template_script =
   | JS
   | TS
+  | TSX
 
 module Debug = struct
   type t =
     | Pug
     | Html
+    | Astro
 end
 
 let collect_from_possible_scripts Utils.Collector.{ possible_scripts; _ } template_script ~on_string =
@@ -70,8 +76,14 @@ let collect_from_possible_scripts Utils.Collector.{ possible_scripts; _ } templa
     | JS ->
       Js.extract raw ~on_string;
       Lwt.return_unit
-    | TS -> (
-      Quickjs.extract Typescript raw >|= function
+    | TS
+     |TSX -> (
+      let kind : Quickjs.kind =
+        match template_script with
+        | TSX -> Typescript_tsx
+        | _ -> Typescript
+      in
+      Quickjs.extract kind raw >|= function
       | Error _ -> ()
       | Ok (strings, _) -> Array.iter strings ~f:on_string ) )
 
@@ -87,6 +99,9 @@ let collect_from_languages collector languages =
       | Pug { collector = src; length = _ } ->
         Utils.Collector.blit_transfer ~src ~dst:collector;
         Lwt.return_unit
+      | Astro { parsed; length = _ } ->
+        Astro.collect collector parsed;
+        Lwt.return_unit
       | Js source ->
         Js.extract_to_collector collector source;
         Lwt.return_unit
@@ -98,7 +113,7 @@ let collect_from_languages collector languages =
     languages
 
 let debug_template ~path languages template_script target =
-  let print_collector ~error_kind (Utils.Collector.{ strings; file_errors; _ } as collector) =
+  let print_collector ~error_kind (Utils.Collector.{ strings; file_errors; warnings; _ } as collector) =
     let* () =
       collect_from_possible_scripts collector template_script ~on_string:(Queue.enqueue strings)
     in
@@ -106,6 +121,10 @@ let debug_template ~path languages template_script target =
     let deduped = Queue.fold strings ~init:String.Set.empty ~f:Set.add in
     let* () = Lwt_io.printlf "Found %d strings:" (Set.length deduped) in
     Set.iter deduped ~f:(fun s -> bprintf buf !"%{Yojson.Basic}\n" (`String s));
+    if not (Queue.is_empty warnings)
+    then (
+      bprintf buf "\n⚠️ %s warnings in %s:\n" error_kind path;
+      Queue.iter warnings ~f:(bprintf buf "- %s\n") );
     if not (Queue.is_empty file_errors)
     then (
       bprintf buf "\n❌ %s errors in %s:\n" error_kind path;
@@ -129,11 +148,18 @@ let debug_template ~path languages template_script target =
         let* () = collect_from_languages collector [ lang ] in
         print_collector ~error_kind:"Pug" collector
       | Pug { collector; length = _ }, Pug -> print_collector ~error_kind:"Pug" collector
-      | Html { length = Some len; _ }, Pug -> Lwt_io.printlf "<HTML code - %d bytes>" len
-      | Html { length = None; _ }, Pug -> Lwt_io.printl "<HTML code>"
-      | Pug_native { length = Some len; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" len
-      | Pug_native { length = None; _ }, Html -> Lwt_io.printl "<Pug code>"
-      | Pug { length; _ }, Html -> Lwt_io.printlf "<Pug code - %d bytes>" length
+      | (Astro { parsed; length = _ } as lang), Astro ->
+        let* () = Lwt_io.printlf !"%{sexp#hum: Astro.t}" parsed in
+        let collector = Utils.Collector.create ~path in
+        let* () = collect_from_languages collector [ lang ] in
+        print_collector ~error_kind:"Astro" collector
+      | Astro { length = Some len; _ }, (Pug | Html) -> Lwt_io.printlf "<Astro code - %d bytes>" len
+      | Astro { length = None; _ }, (Pug | Html) -> Lwt_io.printl "<Astro code>"
+      | Html { length = Some len; _ }, (Pug | Astro) -> Lwt_io.printlf "<HTML code - %d bytes>" len
+      | Html { length = None; _ }, (Pug | Astro) -> Lwt_io.printl "<HTML code>"
+      | Pug_native { length = Some len; _ }, (Html | Astro) -> Lwt_io.printlf "<Pug code - %d bytes>" len
+      | Pug_native { length = None; _ }, (Html | Astro) -> Lwt_io.printl "<Pug code>"
+      | Pug { length; _ }, (Html | Astro) -> Lwt_io.printlf "<Pug code - %d bytes>" length
       | Failed msg, _ -> Lwt_io.printlf "❌ Parsing error in path: %s" msg)
     languages
 

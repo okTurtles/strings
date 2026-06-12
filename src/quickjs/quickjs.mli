@@ -2,6 +2,7 @@ open! Core
 
 type kind =
   | Typescript
+  | Typescript_tsx
   | Pug
 
 val init_time : Base.Int63.t ref
