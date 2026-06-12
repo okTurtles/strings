@@ -65,16 +65,16 @@ const title = L('Create a group')
 
 If an `<I18n>` element contains `{placeholders}` but is missing `is:raw`, the extractor prints a warning (the string is still extracted), because Astro would otherwise evaluate the placeholders as expressions.
 
-A minimal `I18n.astro` component looks like this:
+A minimal `I18n.astro` component looks like this (note: the runtime lookup function is deliberately not named `L` — `L` is reserved for string literals, which is what the extractor scans for, and it is never called with a variable):
 
 ```astro
 ---
-import { L } from '../utils/translations'
+import { translate } from '../utils/translations'
 const { args } = Astro.props
 const text = await Astro.slots.render('default')
 ---
 
-<Fragment set:html={L(text.trim(), args)} />
+<Fragment set:html={translate(text.trim(), args)} />
 ```
 
 ## Developers
