@@ -177,7 +177,7 @@ Simply run it before submitting a Pull Request!
 
 # Linux
 tar xzvf strings.linux.tar.gz # unzip
-./strings src/
+./strings.linux src/
 ```
 - **MacOS**: Monterey or newer
 - **Linux** and **WSL**
