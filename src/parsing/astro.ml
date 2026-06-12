@@ -189,16 +189,18 @@ let parsers () =
   in
 
   let script_block =
-    string "<script" *> tag_boundary *> tag_rest >>= fun (_, self_closing) ->
+    string "<script" *> tag_boundary *> tag_rest >>= fun (exprs, self_closing) ->
+    let exprs = List.map exprs ~f:(fun s -> Expression s) in
     match self_closing with
-    | true -> return []
-    | false -> take_past (string "</script" *> mlws *> char '>') >>| fun body -> [ Script body ]
+    | true -> return exprs
+    | false -> take_past (string "</script" *> mlws *> char '>') >>| fun body -> Script body :: exprs
   in
   let style_block =
-    string "<style" *> tag_boundary *> tag_rest >>= fun (_, self_closing) ->
+    string "<style" *> tag_boundary *> tag_rest >>= fun (exprs, self_closing) ->
+    let exprs = List.map exprs ~f:(fun s -> Expression s) in
     match self_closing with
-    | true -> return []
-    | false -> skip_past (string "</style" *> mlws *> char '>') *> return []
+    | true -> return exprs
+    | false -> skip_past (string "</style" *> mlws *> char '>') *> return exprs
   in
 
   let attr_name =
@@ -500,3 +502,19 @@ let%test_unit "astro: division is not treated as a regex" =
   [%test_eq: string list]
     (Queue.to_list collector.possible_scripts)
     [ "(a / b)"; "(x.length / 2 + y.length / 2)" ]
+
+let%test_unit "astro: define:vars expression on a script tag" =
+  let collector = test_collect "<script define:vars={{ message: L('Hello') }}>alert(message)</script>" in
+  [%test_eq: string list]
+    (Queue.to_list collector.possible_scripts)
+    [ "alert(message)"; "({ message: L('Hello') })" ]
+
+let%test_unit "astro: define:vars expression on a style tag" =
+  let collector =
+    test_collect "<style define:vars={{ color: theme }}>.a { color: var(--color) }</style>"
+  in
+  [%test_eq: string list] (Queue.to_list collector.possible_scripts) [ "({ color: theme })" ]
+
+let%test_unit "astro: expression on a self-closing script tag" =
+  let collector = test_collect "<script src={url} />" in
+  [%test_eq: string list] (Queue.to_list collector.possible_scripts) [ "(url)" ]
