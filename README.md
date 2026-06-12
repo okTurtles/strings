@@ -1,6 +1,20 @@
 # String Extractor
 
-The String Extractor is a program that runs on your computer to help manage translations.
+The String Extractor (`strings`) is a program that runs on your computer to help manage translations.
+
+It works together with two client-side markers that your app defines: the **`L()` function** and the **`<i18n>`/`<I18n>` tag**. These play a double role:
+
+1. **At extraction time**, `strings` scans your source files (`.js`, `.ts`, `.html`, `.vue`, `.pug`, `.astro`) for string *literals* wrapped by `L('...')` or enclosed in `<i18n>...</i18n>` tags, and collects them into `strings/english.strings` and `strings/english.json` (English currently acts as the default language). Only literals are extracted — variables and other expressions are ignored.
+2. **At runtime**, those same markers act as *lookup functions*: the app calls `L('Logout')` (or renders `<i18n>Logout</i18n>`) to look up the English text in the translation mappings for the user's language and display e.g. `"Déconnexion"`.
+
+The workflow:
+
+1. Developers wrap user-facing strings in `L('...')` or `<i18n>` tags.
+2. Running `strings` generates/updates `strings/english.strings` (and `.json`).
+3. `english.strings` is copied to e.g. `french.strings`, and translators update the right-hand side of each mapping.
+4. At runtime, `L()` / `<i18n>` use those mappings to retrieve and display the translated string.
+
+> **Note:** An npm library providing the client-side `L()` function and `i18n`/`I18n` components will be published soon. Until then, see [group-income](https://github.com/okTurtles/group-income) for a real-world implementation.
 
 ## Help translate a language
 You can contribute by directly making changes to the `.strings` file for the language of your choice. Those files are located in the `strings/` directory. If the language of your choice is not present yet, follow the instructions in [Add a language](#Add-a-language).
@@ -39,7 +53,70 @@ Notes:
 1. Make a copy of `english.strings` and rename it to e.g. `french.strings`
 2. Start translating `french.strings`!
 
-## Astro
+## Usage Examples
+
+`strings` extracts string literals labeled by `L()` and `i18n`/`I18n` tags. Here is what that looks like in each supported file type.
+
+### JavaScript / TypeScript
+
+`L('...')` calls are extracted from `.js` and `.ts` files:
+
+```js
+const message = L('Welcome back!')
+```
+
+```
+/* app.js */
+"Welcome back!" = "Welcome back!";
+```
+
+### Vue
+
+In `.vue` files, `<i18n>` tag contents are extracted from the template (HTML or Pug), and `L('...')` calls from the script block:
+
+```vue
+<template lang="html">
+  <button>
+    <i18n>Logout</i18n>
+  </button>
+</template>
+
+<script>
+export default {
+  computed: {
+    greeting () {
+      return L('Good morning, {name}!', { name: this.name })
+    }
+  }
+}
+</script>
+```
+
+With a Pug template:
+
+```vue
+<template lang="pug">
+p.notice
+  i18n You and {count} other members are contributing.
+</template>
+```
+
+```
+/* Home.vue */
+"Good morning, {name}!" = "Good morning, {name}!";
+
+/* Home.vue */
+"Logout" = "Logout";
+
+/* Widget.vue */
+"You and {count} other members are contributing." = "You and {count} other members are contributing.";
+```
+
+Note how `{name}` and `{count}` placeholders are part of the extracted string: the translator moves them around freely, and the runtime `L()` / `i18n` implementation substitutes the values.
+
+Plain `.html` and `.pug` files are scanned the same way as the corresponding Vue template languages.
+
+### Astro
 
 The extractor also scans `.astro` files ([Astro framework](https://astro.build)). It extracts:
 
@@ -50,11 +127,13 @@ Because Astro compiles `{...}` in element children as JavaScript expressions, ad
 
 ```astro
 ---
-import I18n from '../components/I18n.astro'
+import { I18n, L, LTags } from '<future-strings-package>'
 const title = L('Create a group')
 ---
 
-<h1>{L('Welcome to Group Income')}</h1>
+<title>{title}</title>
+
+<I18n tag="h1">Welcome to Group Income</I18n>
 
 <I18n is:raw>Logout</I18n>
 
@@ -65,16 +144,20 @@ const title = L('Create a group')
 
 If an `<I18n>` element contains `{placeholders}` but is missing `is:raw`, the extractor prints a warning (the string is still extracted), because Astro would otherwise evaluate the placeholders as expressions.
 
-A minimal `I18n.astro` component looks like this (note: the runtime lookup function is deliberately not named `L` — `L` is reserved for string literals, which is what the extractor scans for, and it is never called with a variable):
+Running the extractor over the example above adds these entries to `strings/english.strings`:
 
-```astro
----
-import { translate } from '../utils/translations'
-const { args } = Astro.props
-const text = await Astro.slots.render('default')
----
+```
+/* pages/example.astro */
+"Create a group" = "Create a group";
 
-<Fragment set:html={translate(text.trim(), args)} />
+/* pages/example.astro */
+"Logout" = "Logout";
+
+/* pages/example.astro */
+"Welcome to Group Income" = "Welcome to Group Income";
+
+/* pages/example.astro */
+"Yes, I want to {strong_}delete {name} permanently{_strong}." = "Yes, I want to {strong_}delete {name} permanently{_strong}.";
 ```
 
 ## Developers
@@ -92,7 +175,7 @@ Simply run it before submitting a Pull Request!
 
 # Linux
 tar xzvf strings.linux.tar.gz # unzip
-./strings.linux src/
+./strings src/
 ```
 - **MacOS**: Monterey or newer
 - **Linux** and **WSL**
