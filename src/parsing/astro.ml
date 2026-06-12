@@ -27,8 +27,32 @@ let parsers () =
   let open Basic in
   let buf = Buffer.create 256 in
 
+  (* In valid JS, a '/' directly after one of these characters (or at the start of an
+     expression) cannot be a division operator, so it must start a regex literal (after
+     ruling out comments). After identifiers, ')', ']', etc. the '/' stays ambiguous
+     (division vs. regex after [return]) and is treated as plain text, as before.
+     '<' and '>' are deliberately excluded: Astro expressions may contain JSX, where
+     "</p>" would otherwise look like the start of a regex. *)
+  let regex_can_follow () =
+    let rec last_significant i =
+      if i < 0
+      then None
+      else (
+        let c = Buffer.nth buf i in
+        if is_mlws c then last_significant (i - 1) else Some c )
+    in
+    match last_significant (Buffer.length buf - 1) with
+    | None -> true
+    | Some
+        ( '(' | ',' | '=' | ':' | '[' | '!' | '&' | '|' | '?' | ';' | '{' | '}' | '+' | '-' | '*' | '%'
+        | '~' | '^' ) ->
+      true
+    | Some _ -> false
+  in
+
   (* Character-level scanners. They all append the consumed characters to [buf] so that
-     brace matching ignores braces inside strings, template literals, and comments. *)
+     brace matching ignores braces inside strings, template literals, comments, and
+     regex literals. *)
   let rec braces depth =
     any_char >>= fun c ->
     match c with
@@ -46,8 +70,9 @@ let parsers () =
       Buffer.add_char buf c;
       in_template false >>= fun () -> braces depth
     | '/' ->
+      let regex_ok = regex_can_follow () in
       Buffer.add_char buf c;
-      maybe_comment () >>= fun () -> braces depth
+      maybe_comment_or_regex ~regex_ok >>= fun () -> braces depth
     | c ->
       Buffer.add_char buf c;
       braces depth
@@ -74,14 +99,25 @@ let parsers () =
         in_template false
       | _ -> in_template false )
     | _ -> in_template false
-  and maybe_comment () =
+  and maybe_comment_or_regex ~regex_ok =
     peek_char >>= function
     | Some '/' -> take_remaining >>| Buffer.add_string buf
     | Some '*' ->
       advance 1 >>= fun () ->
       Buffer.add_char buf '*';
       in_block_comment ()
+    | Some _ when regex_ok -> in_regex false false
     | _ -> return ()
+  and in_regex in_class escaped =
+    any_char >>= fun c ->
+    Buffer.add_char buf c;
+    match c, escaped with
+    | _, true -> in_regex in_class false
+    | '\\', false -> in_regex in_class true
+    | '[', false -> in_regex true false
+    | ']', false -> in_regex false false
+    | '/', false when not in_class -> return ()
+    | _ -> in_regex in_class false
   and in_block_comment () =
     any_char >>= fun c ->
     Buffer.add_char buf c;
@@ -434,3 +470,33 @@ let%test_unit "astro: expression without I18n is not rescanned into strings" =
   [%test_eq: string list]
     (Queue.to_list collector.possible_scripts)
     [ "(cond && <p>{L('Inner JSX string')}</p>)" ]
+
+let%test_unit "astro: regex literal with unbalanced closing brace" =
+  let collector = test_collect "<h1>{x.replace(/}/g, '')}</h1>" in
+  [%test_eq: string list] (Queue.to_list collector.possible_scripts) [ "(x.replace(/}/g, ''))" ]
+
+let%test_unit "astro: regex literal with unbalanced opening brace" =
+  let collector = test_collect "{x.replace(/{/g, '')}<p>{L('After')}</p>" in
+  [%test_eq: string list]
+    (Queue.to_list collector.possible_scripts)
+    [ "(x.replace(/{/g, ''))"; "(L('After'))" ]
+
+let%test_unit "astro: regex character class containing slash and brace" =
+  let collector = test_collect "{x.split(/[/}]/)}" in
+  [%test_eq: string list] (Queue.to_list collector.possible_scripts) [ "(x.split(/[/}]/))" ]
+
+let%test_unit "astro: regex with escaped slash and brace" =
+  let collector = test_collect {|{x.replace(/\/\}/g, '')}|} in
+  [%test_eq: string list] (Queue.to_list collector.possible_scripts) [ {|(x.replace(/\/\}/g, ''))|} ]
+
+let%test_unit "astro: regex after assignment" =
+  let collector = test_collect "{(() => { const re = /}/; return x.replace(re, '') })()}" in
+  [%test_eq: string list]
+    (Queue.to_list collector.possible_scripts)
+    [ "((() => { const re = /}/; return x.replace(re, '') })())" ]
+
+let%test_unit "astro: division is not treated as a regex" =
+  let collector = test_collect "{a / b}{x.length / 2 + y.length / 2}" in
+  [%test_eq: string list]
+    (Queue.to_list collector.possible_scripts)
+    [ "(a / b)"; "(x.length / 2 + y.length / 2)" ]
