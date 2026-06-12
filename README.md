@@ -1,6 +1,8 @@
-# String Extractor
+# The Strings Translation Utility
 
-The String Extractor (`strings`) is a program that runs on your computer to help manage translations.
+The `strings` utility extracts user-facing strings from source files to make it easy to both translate and dislay them.
+
+Unlike some i18n translation software, strings allows developers to write their strings directly in-place instead of having to manage some separate list of special "keys" to then reference wherever the string is supposed to show up. With strings, you just write your software like normal, and use special markers to indicate that this is a localized string. strings will then extract this string and place it into localization files for easy localization. You don't need special software, just Github and an LLM is all you need to translate your entire app.
 
 It works together with two client-side markers that your app defines: the **`L()` function** and the **`<i18n>`/`<I18n>` tag**. These play a double role:
 
