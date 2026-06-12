@@ -15,7 +15,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-${{ github.ref_name || inputs.tag }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -42,10 +42,10 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
-          tar tzf strings.linux.tar.gz | grep -q '^strings.linux$'
+          tar tzf strings.linux.tar.gz | grep -qx 'strings\.linux'
           tar tzf strings.linux.tar.gz | grep -q '^lib/'
           docker run --rm -v "$(pwd):/work" -w /work ubuntu:22.04 \
-            sh -c 'apt-get update >/dev/null && apt-get install -y musl >/dev/null && mkdir -p strings && ./strings.linux -version'
+            sh -c 'apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y musl >/dev/null && ./strings.linux -version'
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -177,7 +177,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
           RELEASE_MODEL: ${{ vars.RELEASE_MODEL }}
-        run: node scripts/generate-release-notes.mjs
+        run: |
+          if [ -f scripts/generate-release-notes.mjs ]; then
+            node scripts/generate-release-notes.mjs
+          else
+            echo "::warning::generate-release-notes.mjs not present at this ref; skipping Changes section"
+            mkdir -p dist && : > dist/changes.md
+          fi
 
       - name: Compose release body
         run: |
