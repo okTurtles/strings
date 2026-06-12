@@ -69,6 +69,7 @@ A minimal `I18n.astro` component looks like this:
 
 ```astro
 ---
+import { L } from '../utils/translations'
 const { args } = Astro.props
 const text = await Astro.slots.render('default')
 ---
