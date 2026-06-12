@@ -31,16 +31,33 @@ jobs:
           opam install . --deps-only --update-invariant
           npm install --no-save typescript browserify pug-lexer pug-parser pug-walk
 
+      - name: Cache QuickJS
+        id: cache-quickjs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: quickjs
+          key: quickjs-2021-03-27-${{ runner.os }}
+
       - name: Install QuickJS
+        if: steps.cache-quickjs.outputs.cache-hit != 'true'
         run: |
           curl -fsSL https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz -o quickjs.tar.xz
           tar xvf quickjs.tar.xz && rm quickjs.tar.xz
           mv quickjs-2021-03-27 quickjs
           cd quickjs && make
 
+      - name: Cache Flow
+        id: cache-flow
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: flow
+          key: flow-v0.183.1
+
       - name: Install Flow
         run: |
-          git clone --branch v0.183.1 --depth 1 https://github.com/facebook/flow.git flow
+          if [ ! -d flow ]; then
+            git clone --branch v0.183.1 --depth 1 https://github.com/facebook/flow.git flow
+          fi
           ln -s "$(pwd)/flow/src/parser" src/flow_parser
           ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
           ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
