@@ -118,6 +118,7 @@ try {
   writeChanges(notes ? `${notes}\n\n${generatedNote}` : "");
 } catch (error) {
   // Release notes are best-effort: never fail the release over them.
-  console.error(`::warning::Failed to generate release notes: ${error.message}`);
+  // Workflow commands are only processed from stdout, hence console.log.
+  console.log(`::warning::Failed to generate release notes: ${error.message}`);
   writeChanges("");
 }
