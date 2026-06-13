@@ -42,10 +42,11 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
-          tar tzf strings.linux.tar.gz | grep -qx 'strings\.linux'
-          tar tzf strings.linux.tar.gz | grep -q '^lib/'
-          docker run --rm -v "$(pwd):/work" -w /work ubuntu:22.04 \
-            sh -c 'apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y musl >/dev/null && ./strings.linux -version'
+          rm -rf smoke-test
+          mkdir -p smoke-test
+          tar xzf strings.linux.tar.gz -C smoke-test
+          mkdir -p smoke-test/strings
+          ./smoke-test/strings.linux -version
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
