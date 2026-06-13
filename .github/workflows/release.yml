@@ -1,0 +1,236 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - v*
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build, such as v1.2.3
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Build Linux binary (Docker)
+        run: |
+          set -euo pipefail
+          docker build . -t strings:latest
+          STRINGS_CID="$(docker create strings:latest)"
+          rm -rf strings.linux strings.linux.tar.gz lib
+          docker cp "$STRINGS_CID":/app/strings.exe strings.linux
+          docker cp "$STRINGS_CID":/app/lib lib
+          docker rm "$STRINGS_CID"
+          tar czvf strings.linux.tar.gz strings.linux lib
+
+      - name: Smoke test
+        run: |
+          set -euo pipefail
+          tar tzf strings.linux.tar.gz | grep -qx 'strings\.linux'
+          tar tzf strings.linux.tar.gz | grep -q '^lib/'
+          docker run --rm -v "$(pwd):/work" -w /work ubuntu:22.04 \
+            sh -c 'apt-get update >/dev/null && DEBIAN_FRONTEND=noninteractive apt-get install -y musl >/dev/null && ./strings.linux -version'
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: strings.linux.tar.gz
+          path: strings.linux.tar.gz
+          if-no-files-found: error
+
+  build-macos:
+    # arm64 (Apple silicon) only; Intel Macs are not supported
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Install Homebrew dependencies
+        run: brew install libomp
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@e32b06a3e831ff2fbc6f08cf35be2085e3918014 # v3.6.1
+        with:
+          ocaml-compiler: 5.1.1
+          dune-cache: true
+          opam-repositories: |
+            default: https://github.com/ocaml/opam-repository.git
+
+      - name: Install dependencies
+        run: |
+          opam install . --deps-only --update-invariant
+          npm install --no-save typescript browserify pug-lexer pug-parser pug-walk
+
+      - name: Cache QuickJS
+        id: cache-quickjs
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: quickjs
+          key: quickjs-2021-03-27-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Install QuickJS
+        if: steps.cache-quickjs.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz -o quickjs.tar.xz
+          tar xvf quickjs.tar.xz && rm quickjs.tar.xz
+          mv quickjs-2021-03-27 quickjs
+          cd quickjs && make
+
+      - name: Cache Flow
+        id: cache-flow
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: flow
+          key: flow-v0.183.1-${{ runner.os }}
+
+      - name: Install Flow
+        run: |
+          if [ ! -d flow ]; then
+            git clone --branch v0.183.1 --depth 1 https://github.com/facebook/flow.git flow
+          fi
+          ln -s "$(pwd)/flow/src/parser" src/flow_parser
+          ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
+          ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
+
+      - name: Build macOS binary
+        run: |
+          set -euo pipefail
+          DUNE_PROFILE=release opam exec -- dune build src/cli/strings.exe
+          cp _build/default/src/cli/strings.exe strings.mac
+          chmod 755 strings.mac
+          strip strings.mac
+
+      - name: Smoke test
+        run: |
+          mkdir -p strings
+          ./strings.mac -version
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: strings.mac
+          path: strings.mac
+          if-no-files-found: error
+
+  release:
+    needs: [build-linux, build-macos]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      - name: Resolve release tag
+        env:
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "${GITHUB_REF_TYPE}" = "tag" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="${DISPATCH_TAG}"
+          fi
+
+          if [[ ! "${TAG}" =~ ^v[0-9]+(\.[0-9]+)*([-+][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid release tag: ${TAG}" >&2
+            exit 1
+          fi
+
+          echo "TAG=${TAG}" >> "${GITHUB_ENV}"
+
+          SOURCE_VERSION="$(sed -n 's/^let version = "\(.*\)"$/\1/p' src/cli/strings.ml)"
+          if [ "v${SOURCE_VERSION}" != "${TAG}" ]; then
+            echo "::warning::Tag ${TAG} does not match version v${SOURCE_VERSION} in src/cli/strings.ml"
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Generate changes section
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
+          RELEASE_MODEL: ${{ vars.RELEASE_MODEL }}
+        run: |
+          if [ -f scripts/generate-release-notes.mjs ]; then
+            node scripts/generate-release-notes.mjs
+          else
+            echo "::warning::generate-release-notes.mjs not present at this ref; skipping Changes section"
+            mkdir -p dist && : > dist/changes.md
+          fi
+
+      - name: Compose release body
+        run: |
+          set -euo pipefail
+
+          SHA_MAC="$(sha256sum dist/strings.mac | awk '{print $1}')"
+          SHA_LINUX="$(sha256sum dist/strings.linux.tar.gz | awk '{print $1}')"
+
+          {
+            echo '```'
+            echo "${SHA_MAC}  strings.mac"
+            echo "${SHA_LINUX}  strings.linux.tar.gz"
+            echo '```'
+            echo
+            echo '**MacOS**'
+            echo 'First time setup: `chmod +x strings.mac && xattr -d com.apple.quarantine strings.mac`'
+            echo 'Usage: `./strings.mac src/`'
+            echo
+            echo '**Linux**'
+            echo 'First time setup: `tar xzvf strings.linux.tar.gz`'
+            echo 'Usage: `./strings.linux src/`'
+            if [ -s dist/changes.md ]; then
+              echo
+              echo '## Changes'
+              echo
+              cat dist/changes.md
+            fi
+          } > dist/release-notes.md
+
+          cat dist/release-notes.md
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          if gh release view "${TAG}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" \
+              --repo "${GITHUB_REPOSITORY}" \
+              --notes-file dist/release-notes.md
+            gh release upload "${TAG}" dist/strings.mac dist/strings.linux.tar.gz \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "${TAG}" dist/strings.mac dist/strings.linux.tar.gz \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "${TAG}" \
+              --notes-file dist/release-notes.md
+          fi

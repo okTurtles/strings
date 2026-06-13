@@ -57,8 +57,8 @@
   (action (bash "
     OUT=\"libomp.a\"
     PATHS=\"
-      /usr/local/Cellar/libomp/17.0.6/lib/libomp.a
-      /opt/homebrew/Cellar/libomp/20.1.6/lib/libomp.a
+      /usr/local/Cellar/libomp/*/lib/libomp.a
+      /opt/homebrew/Cellar/libomp/*/lib/libomp.a
       /usr/lib/x86_64-linux-gnu/libomp.a
       /usr/lib/x86_64-linux-gnu/libgomp.a
       /usr/lib/libgomp.a

@@ -177,7 +177,7 @@ Simply run it before submitting a Pull Request!
 
 # Linux
 tar xzvf strings.linux.tar.gz # unzip
-./strings src/
+./strings.linux src/
 ```
 - **MacOS**: Monterey or newer
 - **Linux** and **WSL**
@@ -185,3 +185,11 @@ tar xzvf strings.linux.tar.gz # unzip
   - Debian 11 (Bullseye) or newer
   - You'll need to install your Linux distribution's `musl` package: `apt-get install musl`
   - Make sure the `lib` directory stays in the same directory as `strings.linux`
+
+## Historical AI Usage
+
+This project is almost entirely hand-written by @SGrondin.
+
+Recent features have been done by @taoeffect under Opus 4.6 (tests), and Fable 5 (astro support + automated releases).
+
+Future releases may continue to involve AI usage, and all such usage must be disclosed in PR descriptions.
