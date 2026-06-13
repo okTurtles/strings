@@ -28,10 +28,28 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
+      # Unlike the macOS build, Linux does not use ocaml/setup-ocaml because the release binary must be built against musl.
+      # Cache Docker layers here instead because that is where the Linux release build's opam deps are installed.
+      - name: Cache Docker layers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: /tmp/.buildx-cache
+          key: linux-docker-${{ hashFiles('Dockerfile', 'strings.opam') }}
+          restore-keys: |
+            linux-docker-
+
       - name: Build Linux binary (Docker)
         run: |
           set -euo pipefail
-          docker build . -t strings:latest
+          docker buildx create --use
+          docker buildx build \
+            --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            --load \
+            -t strings:latest \
+            .
+          rm -rf /tmp/.buildx-cache
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
           STRINGS_CID="$(docker create strings:latest)"
           rm -rf strings.linux strings.linux.tar.gz lib
           docker cp "$STRINGS_CID":/app/strings.exe strings.linux
