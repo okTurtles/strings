@@ -42,6 +42,8 @@ jobs:
       - name: Smoke test
         run: |
           set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y musl
           rm -rf smoke-test
           mkdir -p smoke-test
           tar xzf strings.linux.tar.gz -C smoke-test
