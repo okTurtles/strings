@@ -210,7 +210,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           ZAI_API_KEY: ${{ secrets.ZAI_API_KEY }}
-          RELEASE_MODEL: ${{ vars.RELEASE_MODEL }}
+          # Org variable shared with the PR review workflow. The script only calls Z.ai,
+          # so this must be a Z.ai model name (REVIEW_PROVIDER=zai-coding-plan).
+          REVIEW_MODEL: ${{ vars.REVIEW_MODEL }}
         run: |
           if [ -f scripts/generate-release-notes.mjs ]; then
             node scripts/generate-release-notes.mjs

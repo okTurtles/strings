@@ -4,12 +4,12 @@
 // notes are best-effort and must never fail the release).
 //
 // Required environment: TAG, GITHUB_REPOSITORY, GH_TOKEN, ZAI_API_KEY.
-// Optional: RELEASE_MODEL (defaults to glm-5.1).
+// Optional: REVIEW_MODEL, a Z.ai model name (defaults to glm-5.1).
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 
 const apiKey = process.env.ZAI_API_KEY;
-const model = process.env.RELEASE_MODEL || "glm-5.1";
+const model = process.env.REVIEW_MODEL || "glm-5.1";
 const repo = process.env.GITHUB_REPOSITORY;
 const currentTag = process.env.TAG;
 

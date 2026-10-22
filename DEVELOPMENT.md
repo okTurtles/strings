@@ -102,4 +102,4 @@ The workflow can also be run manually from the Actions tab (`workflow_dispatch`)
 Repository configuration:
 
 - **Secret `ZAI_API_KEY`** (required for release notes): a [Z.ai](https://z.ai) API key used by `scripts/generate-release-notes.mjs`. If missing or the API call fails, the release still succeeds, just without the `## Changes` section.
-- **Variable `RELEASE_MODEL`** (optional): the Z.ai model used for release notes; defaults to `glm-5.1`.
+- **Variable `REVIEW_MODEL`** (optional; the okTurtles org variable shared with the PR review workflow): the Z.ai model used for release notes; defaults to `glm-5.1`. The script only calls Z.ai, so this must be a Z.ai model name (`REVIEW_PROVIDER=zai-coding-plan`). If it is set to an OpenRouter model, the release still succeeds, but without the `## Changes` section.
