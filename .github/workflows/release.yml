@@ -20,7 +20,18 @@ concurrency:
 
 jobs:
   build-linux:
-    runs-on: ubuntu-latest
+    name: build-linux (${{ matrix.arch }})
+    strategy:
+      matrix:
+        # arch matches `uname -m`, so users can download strings.linux-$(uname -m).tar.gz
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    env:
+      ASSET: strings.linux-${{ matrix.arch }}.tar.gz
     steps:
       - name: Checkout code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -30,13 +41,14 @@ jobs:
 
       # Unlike the macOS build, Linux does not use ocaml/setup-ocaml because the release binary must be built against musl.
       # Cache Docker layers here instead because that is where the Linux release build's opam deps are installed.
+      # Each arch builds natively on its own runner, so each arch needs its own cache.
       - name: Cache Docker layers
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: /tmp/.buildx-cache
-          key: linux-docker-${{ hashFiles('Dockerfile', 'strings.opam') }}
+          key: linux-docker-${{ matrix.arch }}-${{ hashFiles('Dockerfile', 'strings.opam') }}
           restore-keys: |
-            linux-docker-
+            linux-docker-${{ matrix.arch }}-
 
       - name: Build Linux binary (Docker)
         run: |
@@ -51,11 +63,11 @@ jobs:
           rm -rf /tmp/.buildx-cache
           mv /tmp/.buildx-cache-new /tmp/.buildx-cache
           STRINGS_CID="$(docker create strings:latest)"
-          rm -rf strings.linux strings.linux.tar.gz lib
+          rm -rf strings.linux "${ASSET}" lib
           docker cp "$STRINGS_CID":/app/strings.exe strings.linux
           docker cp "$STRINGS_CID":/app/lib lib
           docker rm "$STRINGS_CID"
-          tar czvf strings.linux.tar.gz strings.linux lib
+          tar czvf "${ASSET}" strings.linux lib
 
       - name: Smoke test
         run: |
@@ -64,15 +76,16 @@ jobs:
           sudo apt-get install -y musl
           rm -rf smoke-test
           mkdir -p smoke-test
-          tar xzf strings.linux.tar.gz -C smoke-test
+          tar xzf "${ASSET}" -C smoke-test
           mkdir -p smoke-test/strings
+          test "$(uname -m)" = "${{ matrix.arch }}"
           ./smoke-test/strings.linux -version
 
       - name: Upload artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: strings.linux.tar.gz
-          path: strings.linux.tar.gz
+          name: ${{ env.ASSET }}
+          path: ${{ env.ASSET }}
           if-no-files-found: error
 
   build-macos:
@@ -99,7 +112,7 @@ jobs:
       - name: Install dependencies
         run: |
           opam install . --deps-only --update-invariant
-          npm install --no-save typescript browserify pug-lexer pug-parser pug-walk
+          npm install --no-save typescript@6 browserify pug-lexer pug-parser pug-walk
 
       - name: Cache QuickJS
         id: cache-quickjs
@@ -211,20 +224,22 @@ jobs:
           set -euo pipefail
 
           SHA_MAC="$(sha256sum dist/strings.mac | awk '{print $1}')"
-          SHA_LINUX="$(sha256sum dist/strings.linux.tar.gz | awk '{print $1}')"
+          SHA_LINUX_X86_64="$(sha256sum dist/strings.linux-x86_64.tar.gz | awk '{print $1}')"
+          SHA_LINUX_AARCH64="$(sha256sum dist/strings.linux-aarch64.tar.gz | awk '{print $1}')"
 
           {
             echo '```'
             echo "${SHA_MAC}  strings.mac"
-            echo "${SHA_LINUX}  strings.linux.tar.gz"
+            echo "${SHA_LINUX_X86_64}  strings.linux-x86_64.tar.gz"
+            echo "${SHA_LINUX_AARCH64}  strings.linux-aarch64.tar.gz"
             echo '```'
             echo
             echo '**MacOS**'
             echo 'First time setup: `chmod +x strings.mac && xattr -d com.apple.quarantine strings.mac`'
             echo 'Usage: `./strings.mac src/`'
             echo
-            echo '**Linux**'
-            echo 'First time setup: `tar xzvf strings.linux.tar.gz`'
+            echo '**Linux** (x86_64 and aarch64/arm64)'
+            echo 'First time setup: `tar xzvf strings.linux-$(uname -m).tar.gz`'
             echo 'Usage: `./strings.linux src/`'
             if [ -s dist/changes.md ]; then
               echo
@@ -246,11 +261,11 @@ jobs:
             gh release edit "${TAG}" \
               --repo "${GITHUB_REPOSITORY}" \
               --notes-file dist/release-notes.md
-            gh release upload "${TAG}" dist/strings.mac dist/strings.linux.tar.gz \
+            gh release upload "${TAG}" dist/strings.mac dist/strings.linux-x86_64.tar.gz dist/strings.linux-aarch64.tar.gz \
               --repo "${GITHUB_REPOSITORY}" \
               --clobber
           else
-            gh release create "${TAG}" dist/strings.mac dist/strings.linux.tar.gz \
+            gh release create "${TAG}" dist/strings.mac dist/strings.linux-x86_64.tar.gz dist/strings.linux-aarch64.tar.gz \
               --repo "${GITHUB_REPOSITORY}" \
               --title "${TAG}" \
               --notes-file dist/release-notes.md

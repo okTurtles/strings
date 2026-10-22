@@ -175,12 +175,12 @@ Simply run it before submitting a Pull Request!
 # getting a 'code cannot be verified' error? Run this:
 # xattr -d com.apple.quarantine strings.mac
 
-# Linux
-tar xzvf strings.linux.tar.gz # unzip
+# Linux (x86_64 or aarch64/arm64)
+tar xzvf strings.linux-$(uname -m).tar.gz # unzip
 ./strings.linux src/
 ```
 - **MacOS**: Monterey or newer
-- **Linux** and **WSL**
+- **Linux** and **WSL** (x86_64 or aarch64/arm64)
   - Ubuntu 20.04 or newer
   - Debian 11 (Bullseye) or newer
   - You'll need to install your Linux distribution's `musl` package: `apt-get install musl`

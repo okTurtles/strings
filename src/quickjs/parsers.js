@@ -1,5 +1,7 @@
 'use strict'
 
+// Needs TypeScript 6 or older (installed as `typescript@6`). TypeScript 7+ is a native Go
+// binary and no longer ships this JS compiler API, so it cannot run inside QuickJS.
 const { createSourceFile, ScriptTarget, ScriptKind, SyntaxKind, forEachChild } = require('typescript')
 
 const extractLCalls = function (sourceFile) {

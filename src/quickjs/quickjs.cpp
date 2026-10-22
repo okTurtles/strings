@@ -12,9 +12,8 @@ value stub_init_contexts(value v_num_threads)
 
   caml_enter_blocking_section();
 
-  contexts.reserve(num_threads);
-  vector<string> errors {};
-  errors.reserve(num_threads);
+  contexts.assign(num_threads, nullptr);
+  vector<string> errors(num_threads);
 
   #pragma omp parallel for
   for (int i = 0; i < num_threads; i++) {

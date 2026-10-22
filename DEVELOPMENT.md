@@ -17,8 +17,8 @@ ln -s "$(pwd)/flow/src/parser" src/flow_parser
 ln -s "$(pwd)/flow/src/third-party/sedlex" src/sedlex
 ln -s "$(pwd)/flow/src/hack_forked/utils/collections" src/collections
 
-# JS dependencies
-npm install --no-save typescript browserify pug-lexer pug-parser pug-walk
+# JS dependencies (TypeScript 7+ has no JS compiler API, see src/quickjs/parsers.js)
+npm install --no-save typescript@6 browserify pug-lexer pug-parser pug-walk
 
 # Install QuickJS
 curl https://bellard.org/quickjs/quickjs-2021-03-27.tar.xz > quickjs.tar.xz
@@ -49,14 +49,15 @@ rm -f strings.mac && dune clean && DUNE_PROFILE=release dune build src/cli/strin
 ```sh
 # Don't forget to update the version number in [strings.ml]
 
+# Builds for the host architecture (x86_64 or aarch64)
 docker build . -t strings:latest
 
 STRINGS_CID="$(docker create strings:latest)" \
-&& rm -rf strings.linux strings.linux.tar.gz lib \
+&& rm -rf strings.linux "strings.linux-$(uname -m).tar.gz" lib \
 && docker cp "$STRINGS_CID":/app/strings.exe strings.linux \
 && docker cp "$STRINGS_CID":/app/lib lib \
 && docker rm "$STRINGS_CID" \
-&& tar czvf strings.linux.tar.gz strings.linux lib
+&& tar czvf "strings.linux-$(uname -m).tar.gz" strings.linux lib
 
 # Trying it on Ubuntu 20.04
 docker run -it --rm \
@@ -84,9 +85,9 @@ This builds the project, runs the inline unit tests, and executes the integratio
 
 Releases are automated by [`.github/workflows/release.yml`](.github/workflows/release.yml). Pushing any tag starting with `v` (e.g. `v2.3.0`) triggers the workflow, which:
 
-1. Builds `strings.linux.tar.gz` (via the `Dockerfile`, same as the manual Docker flow above).
+1. Builds `strings.linux-x86_64.tar.gz` and `strings.linux-aarch64.tar.gz` (via the `Dockerfile`, same as the manual Docker flow above). Each one is built natively on a GitHub runner of that architecture (`ubuntu-latest` and `ubuntu-24.04-arm`).
 2. Builds `strings.mac` on a `macos-latest` runner. **The macOS binary is arm64-only (Apple silicon); Intel Macs are not supported.**
-3. Publishes a GitHub Release titled after the tag, with both binaries attached. The release body contains SHA256 checksums, setup/usage instructions, and a `## Changes` section with release notes generated from the commit messages since the previous release.
+3. Publishes a GitHub Release titled after the tag, with all binaries attached. The release body contains SHA256 checksums, setup/usage instructions, and a `## Changes` section with release notes generated from the commit messages since the previous release.
 
 To cut a release:
 
